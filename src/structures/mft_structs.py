@@ -117,6 +117,28 @@ MFTEntryMultiSectorHeader = Struct(
 )
 
 '''
+'''
+MFTFileAttributeFlags = Struct(
+    'Flags'                 / Int32ul,
+    'READONLY'              / Computed(lambda this: this.Flags & 0x00000001),
+    'HIDDEN'                / Computed(lambda this: this.Flags & 0x00000002),
+    'SYSTEM'                / Computed(lambda this: this.Flags & 0x00000004),
+    'VOLUME'                / Computed(lambda this: this.Flags & 0x00000008),
+    'DIRECTORY'             / Computed(lambda this: this.Flags & 0x00000010),
+    'ARCHIVE'               / Computed(lambda this: this.Flags & 0x00000020),
+    'DEVICE'                / Computed(lambda this: this.Flags & 0x00000040),
+    'NORMAL'                / Computed(lambda this: this.Flags & 0x00000080),
+    'TEMPORARY',            / Computed(lambda this: this.Flags & 0x00000100),
+    'SPARSE_FILE',          / Computed(lambda this: this.Flags & 0x00000200),
+    'REPARSE_POINT',        / Computed(lambda this: this.Flags & 0x00000400),
+    'COMPRESSED',           / Computed(lambda this: this.Flags & 0x00000800),
+    'OFFLINE',              / Computed(lambda this: this.Flags & 0x00001000),
+    'NOT_CONTENT_INDEXED',  / Computed(lambda this: this.Flags & 0x00002000),
+    'ENCRYPTED',            / Computed(lambda this: this.Flags & 0x00004000),
+    'VIRTUAL'               / Computed(lambda this: this.Flags & 0x00010000)
+)
+
+'''
 MFT Entry Header: header structure for MFT entry
     MultiSectorHeader:          see MFTEntryMultiSectorHeader
     LogFileSequenceNumber:      $LogFile sequence number
@@ -166,4 +188,22 @@ MFTAttributeHeader = Struct(
         'Resident'          / MFTResidentAttributeData,
         'NonResident'       / MFTNonResidentAttributeData
     )
+)
+
+'''
+MFTFileNameAttribute
+'''
+MFTFileNameAttribute = Struct(
+    'ParentDirectory'       / MFTFileReference,
+    'CreateTime'            / Int64ul,
+    'LastModifiedTime'      / Int64ul,
+    'EntryModifiedTime'     / Int64ul,
+    'LastAccessTime'        / Int64ul,
+    'AllocatedFileSize'     / Int64ul,
+    'FileSize'              / Int64ul,
+    'FileAttributeFlags'    / MFTFileAttributeFlags,
+    'ExtendedData'          / Int32ul,
+    'FileNameLength'        / Int8ul,
+    'FileNameNamespace'     / Int8ul,
+    'FileName'              / Computed(PascalString(Bytes(this.FileSize), encoding='UTF16'))
 )
