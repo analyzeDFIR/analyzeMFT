@@ -4,6 +4,7 @@
 # 02/01/2018
 
 from construct import *
+from src.utils.time import WindowsTime
 
 '''
 MFT Attribute Type Code: type of attribute
