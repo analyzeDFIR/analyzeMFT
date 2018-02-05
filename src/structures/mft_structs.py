@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 # mft_structs.py
 # Noah Rubin
@@ -117,6 +116,7 @@ MFTEntryMultiSectorHeader = Struct(
 )
 
 '''
+MFTFileAttributeFlags
 '''
 MFTFileAttributeFlags = Struct(
     'Flags'                 / Int32ul,
@@ -136,6 +136,15 @@ MFTFileAttributeFlags = Struct(
     'NOT_CONTENT_INDEXED',  / Computed(lambda this: this.Flags & 0x00002000),
     'ENCRYPTED',            / Computed(lambda this: this.Flags & 0x00004000),
     'VIRTUAL'               / Computed(lambda this: this.Flags & 0x00010000)
+)
+
+'''
+MFTFILETIME
+'''
+MFTFILETIME = Struct(
+    'dwLowDateTime'         / Int32ul,
+    'dwHighDateTime'        / Int32ul,
+    '_DateTime'             / Computed(WindowsTime(this).parse())
 )
 
 '''
@@ -195,10 +204,10 @@ MFTFileNameAttribute
 '''
 MFTFileNameAttribute = Struct(
     'ParentDirectory'       / MFTFileReference,
-    'CreateTime'            / Int64ul,
-    'LastModifiedTime'      / Int64ul,
-    'EntryModifiedTime'     / Int64ul,
-    'LastAccessTime'        / Int64ul,
+    'CreateTime'            / MFTFILETIME,
+    'LastModifiedTime'      / MFTFILETIME,
+    'EntryModifiedTime'     / MFTFILETIME,
+    'LastAccessTime'        / MFTFILETIME,
     'AllocatedFileSize'     / Int64ul,
     'FileSize'              / Int64ul,
     'FileAttributeFlags'    / MFTFileAttributeFlags,
@@ -206,4 +215,22 @@ MFTFileNameAttribute = Struct(
     'FileNameLength'        / Int8ul,
     'FileNameNamespace'     / Int8ul,
     'FileName'              / Computed(PascalString(Bytes(this.FileSize), encoding='UTF16'))
+)
+
+'''
+MFTStandardInformationAttribute
+'''
+MFTStandardInformationAttribute = Struct(
+    'CreateTime'            / MFTFILETIME,
+    'LastModifiedTime'      / MFTFILETIME,
+    'EntryModifiedTime'     / MFTFILETIME,
+    'LastAccessTime'        / MFTFILETIME,
+    'FileAttributeFlags'    / MFTFileAttributeFlags,
+    'MaximumVersions'       / Int32ul,
+    'VersionNumber'         / Int32ul,
+    'ClassIdentifier'       / Int32ul,
+    'OwnerIdentifier'       / Int32ul,
+    'SecurityDescriptorID'  / Int32ul,
+    'Quota'                 / Int64ul,
+    'USN'                   / Int64ul
 )
