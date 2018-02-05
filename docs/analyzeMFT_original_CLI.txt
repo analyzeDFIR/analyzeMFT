@@ -1,0 +1,27 @@
+Usage: analyzeMFT.py [options]
+
+Options:
+  -h, --help            show this help message and exit
+  -v, --version         report version and exit
+  -f FILE, --file=FILE  read MFT from FILE
+  -j JSON, --json=JSON  File paths should use the windows path separator
+                        instead of linux
+  -o FILE, --output=FILE
+                        write results to FILE
+  -a, --anomaly         turn on anomaly detection
+  -e, --excel           print date/time in Excel friendly format
+  -b FILE, --bodyfile=FILE
+                        write MAC information to bodyfile
+  --bodystd             Use STD_INFO timestamps for body file rather than FN
+                        timestamps
+  --bodyfull            Use full path name + filename rather than just
+                        filename
+  -c FILE, --csvtimefile=FILE
+                        write CSV format timeline file
+  -l, --localtz         report times using local timezone
+  -d, --debug           turn on debugging output
+  -s, --saveinmemory    Save a copy of the decoded MFT in memory. Do not use
+                        for very large MFTs
+  -p, --progress        Show systematic progress reports.
+  -w, --windows-path    File paths should use the windows path separator
+                        instead of linux
