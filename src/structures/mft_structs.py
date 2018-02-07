@@ -215,7 +215,7 @@ MFTFileNameAttribute = Struct(
     'ExtendedData'          / Int32ul,
     'FileNameLength'        / Int8ul,
     'FileNameNamespace'     / Int8ul,
-    'FileName'              / Computed(PascalString(Bytes(this.FileSize), encoding='UTF16'))
+    'FileName'              / Computed(PascalString(Bytes(this.FileNameLength), encoding='UTF16'))
 )
 
 '''
