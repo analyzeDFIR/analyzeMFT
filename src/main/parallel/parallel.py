@@ -3,17 +3,28 @@
 # Noah Rubin
 # 02/05/2018
 
+from uuid import uuid4
+import logging
 from multiprocessing import Process, JoinableQueue, cpu_count
+
+from src.utils.config import initialize_logger
 
 class QueueWorker(Process):
     '''
     Class to spawn worker process with queue of tasks
     '''
-    def __init__(self, queue, *args, **kwargs):
-        super(QueueWorker, self).__init__()
+    def __init__(self, queue, *args, name=lambda: str(uuid4()), **kwargs):
+        super(QueueWorker, self).__init__(name=name)
         self._queue = queue
         self._args = args
+        self.name = name() if callable(name) else name
         self._kwargs = kwargs
+    def __repr__(self):
+        return 'QueueWorker(%s,%s name=%s%s)'%(\
+            type(self._queue).__name__ + '()',\
+            ' *' + str(self._args) + ', ' if len(self._args) > 0 else '',\
+            self.name,\
+            ', **' + str(self._kwargs) if len(self._kwargs) > 0 else '')
     def run(self):
         '''
         Args:
@@ -32,21 +43,44 @@ class QueueWorker(Process):
             try:
                 task(*args, **kwargs)
             except Exception as e:
-                #TODO: implement logging for errors encountered here
-                pass
+                logging.getLogger(__name__).error('Uncaught exception while executing %s (%s)'%(type(task).__name__, str(e)))
+
+class LoggedQueueWorker(QueueWorker):
+    '''
+    @QueueWorker
+    '''
+    def __init__(self, queue, log_path, *args, name=lambda: str(uuid4()), **kwargs):
+        super(LoggedQueueWorker, self).__init__(queue, *args, name, **kwargs)
+        self._log_path = log_path
+    def run(self):
+        '''
+        @QueueWorker.run
+        '''
+        initialize_logger(self._log_path, self.name + '_tmp_pmft')
+        logging.getLogger(__name__).info('Started worker: ' + self.name)
+        super(LoggedQueueWorker, self).run()
+        logging.getLogger(__name__).info('Ended worker: ' + self.name)
 
 class WorkerPool(object):
     '''
     Class to manage pool of QueueWorker instances
     '''
-    def __init__(self, task_queue, *args, daemonize=True, worker_count=(2 if cpu_count() <= 4 else 4), **kwargs):
-        self._worker_class = QueueWorker
-        self._task_queue = task_queue
+    def __init__(self, task_queue, *args, worker_class=QueueWorker, daemonize=True, worker_count=(2 if cpu_count() <= 4 else 4), **kwargs):
+        self._worker_class = worker_class
+        self._queue = task_queue
         self._task_args = args
         self._task_kwargs = kwargs
         self._workers = None
         self.daemon = daemonize
         self.worker_count = worker_count
+    def __repr__(self):
+        return 'WorkerPool(%s,%s worker_class=%s, daemonize=%s, worker_count=%s%s)'%(\
+            type(self._queue).__name__ + '()',\
+            ' *' + str(self._task_args) + ', ' if len(self._task_args) > 0 else '',\
+            type(self._worker_class).__name__,\
+            str(self.daemon),\
+            str(self.worker_count),\
+            ', **' + str(self._task_kwargs) if len(self._task_kwargs) > 0 else '')
     def add_task(self, task):
         '''
         Args:
@@ -82,7 +116,7 @@ class WorkerPool(object):
         '''
         if self._workers is None:
             self._workers = [\
-                QueueWorker(self._task_queue, *args, **kwargs)\
+                self._worker_class(self._queue, *self._task_args, **self._task_kwargs)\
                 for i in range(self.worker_count)\
             ]
         for worker in self._workers:
@@ -99,7 +133,7 @@ class WorkerPool(object):
         Preconditions:
             N/A
         '''
-        if isinstance(self._queue, JoinableQueue):
+        if isinstance(self._queue, type(JoinableQueue)):
             self._queue.join()
         return True
     def join_workers(self):
@@ -112,7 +146,9 @@ class WorkerPool(object):
             N/A
         '''
         if self._workers is not None:
-            map(lambda x: x.join(), [worker for worker in self._workers if worker.is_alive()])
+            for worker in self._workers:
+                if worker.is_alive():
+                    worker.join()
         return True
     def terminate(self):
         '''

@@ -4,9 +4,16 @@
 # 02/01/2018
 
 import sys
-import os
+from os import path
+from datetime import datetime
+import logging
 
 from src.main.exceptions import PathInitializationError
+
+LOGGING_DEFAULTS = dict(\
+    format='%(asctime)s\t%(levelname)s\t%(name)s\t%(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    level=logging.INFO)
 
 def initialize_paths():
     '''
@@ -20,13 +27,32 @@ def initialize_paths():
         N/A
     '''
     try:
-        runpath = os.path.abspath(sys.argv[0])
-        assert os.path.exists(runpath), 'Run path %s does not exist'%runpath
+        runpath = path.abspath(path.dirname(sys.argv[0]))
+        assert path.exists(runpath), 'Run path %s does not exist'%runpath
     except Exception as e:
         raise PathInitializationException(e)
     else:
         try:
-            sys.path.append(os.path.join(runpath))          # add runpath so 'from src.<module> import <object>' doesn't fail
-            sys.path.append(os.path.join(runpath, 'lib'))   # add lib so 'import {sqlalchemy, construct}' doesn't fail
+            sys.path.append(path.join(runpath))          # add runpath so 'from src.<module> import <object>' doesn't fail
+            sys.path.append(path.join(runpath, 'lib'))   # add lib so 'import {sqlalchemy, construct}' doesn't fail
         except Exception as e:
             raise PathInitializationException(e)
+
+def initialize_logger(log_path, log_prefix=None, format=LOGGING_DEFAULTS.get('format'), datefmt=LOGGING_DEFAULTS.get('datefmt'), level=LOGGING_DEFAULTS.get('level')):
+    '''
+    Args:
+        log_path: String    => valid path to output log to
+        log_prefix: String  => prefix of log file (default: pmft_<datetime>)
+    Procedure:
+        Initialize root logger with formatter, level, and handler set to 
+        FileHandler at path (log_path + log_prefix.log)
+    Preconditions:
+        log_path is of type String
+        log_prefix is of type String
+    '''
+    assert isinstance(log_path, str) and path.exists(log_path), 'Log_path is not a valid path'
+    assert isinstance(log_prefix, (type(None), str)), 'Log_prefix is not of type String'
+    if log_prefix is None:
+        log_prefix = 'pmft_' + datetime.utcnow().strftime('%Y%m%d')
+    full_log_path = path.join(path.abspath(log_path), log_prefix + '.log')
+    logging.basicConfig(filename=full_log_path, format=format, datefmt=datefmt, level=level)
