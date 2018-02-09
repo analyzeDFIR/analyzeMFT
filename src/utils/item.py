@@ -126,7 +126,7 @@ class BaseItem(FieldBoundDict, metaclass=ItemMeta):
         '''
         @BaseItem._transform_to
         '''
-        return sep.join(values)
+        raise NotImplementedError('to_CSV is not implemented for type %s'%cls.__name__)
     @classmethod
     def _JSON_transform_from(cls, input_json):
         '''
@@ -141,11 +141,7 @@ class BaseItem(FieldBoundDict, metaclass=ItemMeta):
         '''
         @BaseItem._transform_from
         '''
-        if isinstance(input_csv, str):
-            split_csv = tuple([item.strip() for item in input_csv.strip().split(sep)])
-            if len(split_csv) == len(cls._FIELDS):
-                return cls(*split_csv)
-        return None
+        raise NotImplementedError('from_CSV is not implemented for type %s'%cls.__name__)
     @classmethod
     def _transform_from(cls, transform, *args, **kwargs):
         '''
