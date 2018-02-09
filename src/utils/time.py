@@ -9,7 +9,8 @@ class WindowsTime(object):
     '''
     Class for converting raw timestamps in MFT to python DateTime object.
     NTFS MFT time values are 64-bit values representing the number of 
-    100-nanosecond intervals since 01/01/1601 00:00:00 UTC.
+    100-nanosecond intervals since 01/01/1601 00:00:00 UTC. Implementation
+    and design inspired by original analyzeMFT (mftutils.WindowsTime)
     '''
     @classmethod
     def parse_mft_filetime(cls, mft_filetime=None, dw_low_datetime=None, dw_high_datetime=None):
@@ -27,11 +28,11 @@ class WindowsTime(object):
             )\
         ), 'Please enter either MFTFILETIME struct or low and high values'
         if mft_filetime is not None:
-            self._low = mft_filetime.dwLowDateTime
-            self._high = mft_filetime.dwHighDateTime
+            self._low = int(mft_filetime.dwLowDateTime)
+            self._high = int(mft_filetime.dwHighDateTime)
         else:
-            self._low = dw_low_datetime
-            self._high = dw_high_datetime
+            self._low = int(dw_low_datetime)
+            self._high = int(dw_high_datetime)
     def parse(self):
         '''
         Args:
@@ -44,7 +45,7 @@ class WindowsTime(object):
         '''
         try:
             return datetime.utcfromtimestamp(\
-                (float(self._high) * 2 ** 32 + self._low) * 1e-7 * 11644473600\
+                ( float(self._high) * 2 ** 32 + self._low ) * 1e-7 - 11644473600\
             )
         except:
             raise
