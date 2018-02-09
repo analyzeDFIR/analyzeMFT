@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
-# pmft.py
+# amft.py
 # Noah Rubin
 # 01/31/2018
 

@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 
 def initialize_parser():
     ## Main parser
-    main_parser = ArgumentParser(prog='pmft.py', description='Windows NTFS $MFT file parser')
+    main_parser = ArgumentParser(prog='amft.py', description='Windows NTFS $MFT file parser')
     main_parser.add_argument('-V', '--version', action='version', version='%(prog)s v0.0.1')
     main_directives = main_parser.add_subparsers()
 

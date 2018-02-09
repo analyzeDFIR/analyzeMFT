@@ -3,9 +3,9 @@
 # Noah Rubin
 # 01/31/2018
 
-class BasePMFTException(Exception):
+class BaseAMFTException(Exception):
     '''
-    Base exception for pmft module
+    Base exception for amft module
     '''
     _MESSAGE = None
 
@@ -31,14 +31,14 @@ class BasePMFTException(Exception):
                 'classname':    type(self).__name__, \
                 'err':          self._err})
 
-class PathInitializationError(BasePMFTException):
+class PathInitializationError(BaseAMFTException):
     '''
     Exception thrown when unable to add dependencies in lib
     directory to sys.path
     '''
     _MESSAGE = 'Unable to append lib directory to path (%(err)s)'
 
-class FieldBoundDictKeyError(BasePMFTException):
+class FieldBoundDictKeyError(BaseAMFTException):
     '''
     Exception thrown when KeyError raised on DictItem object.
     For example:
