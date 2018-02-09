@@ -9,7 +9,7 @@ from pprint import pformat
 from collections import OrderedDict
 from json import dumps as json_dumps, loads as json_loads
 
-from src.utils.fbdict import FieldBoundDict
+from .fbdict import FieldBoundDict
 
 class Field(dict):
     '''
