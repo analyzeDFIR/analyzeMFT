@@ -5,7 +5,7 @@
 # 01/31/2018
 
 from sys import exit
-from src.main.app import pmft_main
+from src.main.app import amft_main
 
 if __name__ == '__main__':
-    exit(pmft_main())
+    exit(amft_main())
