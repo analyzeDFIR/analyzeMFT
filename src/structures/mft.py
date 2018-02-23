@@ -7,6 +7,46 @@ from construct import *
 from src.utils.time import WindowsTime
 
 '''
+MFTGUID
+'''
+MFTGUID = Struct(
+    'Data1'             / Int32ul,
+    'Group1'            / Int16ul,
+    'Group2'            / Int16ul,
+    'Group3'            / Int16ul,
+    'Data2'             / BytesInteger(6, swapped=True)
+)
+
+'''
+MFTSID
+'''
+MFTSID = Struct(
+    'Revision'          / Int8ul,
+    'SubAuthoritiesCount'   / Int8ul,
+    'Authority'         / BytesInteger(6),
+    'SubAuthorities'    / Array(this.SubAuthoritiesCount, Int32ul)
+)
+
+'''
+MFTACLHeader
+'''
+MFTACLHeader = Struct(
+    'Revision'          / Int8ul,
+    Padding(1),
+    'ACLSize'           / Int16ul,
+    'EntryCount'        / Int16ul
+)
+
+'''
+MFTACLEntry
+'''
+MFTACLEntryHeader = Struct(
+    'Type'              / Int8ul,
+    'Flags'             / MFTACLEntryFlags,
+    'ACLEntrySize'      / Int16ul
+)
+
+'''
 MFT Attribute Type Code: type of attribute
     0x10: $STANDARD_INFORMATION:    File attributes (such as read-only and archive), 
                                     time stamps (such as file creation and last modified), 
@@ -26,21 +66,21 @@ MFT Attribute Type Code: type of attribute
     0XC0: $REPARSE_POINT:           The reparse point data.
 '''
 MFTAttributeTypeCode = Enum(Int64ul, 
-    std_info    = 0x10,
-    attr_list   = 0x20,
-    file_name   = 0x30,
-    obj_id      = 0x40,
-    sec_descr   = 0x50,
-    vol_name    = 0x60,
-    vol_info    = 0x70,
-    data        = 0x80,
-    idx_root    = 0x90,
-    idx_alloc   = 0xA0,
-    bitmap      = 0xB0,
-    rep_point   = 0xC0,
-    ea_info     = 0xD0,
-    ea          = 0xE0,
-    log_utl_str = 0x100
+    STANDARD_INFORMATION    = 0x10,
+    ATTRIBUTE_LIST          = 0x20,
+    FILE_NAME               = 0x30,
+    OBJECT_ID               = 0x40,
+    SECURITY_DESCRIPTOR     = 0x50,
+    VOLUME_NAME             = 0x60,
+    VOLUME_INFORMATION      = 0x70,
+    DATA                    = 0x80,
+    INDEX_ROOT              = 0x90,
+    INDEX_ALLOCATION        = 0xA0,
+    BITMAP                  = 0xB0,
+    REPARSE_POINT           = 0xC0,
+    EA_INFORMATION          = 0xD0,
+    EA                      = 0xE0,
+    LOGGED_UTILITY_STREAM   = 0x100
 )
 
 '''
@@ -144,8 +184,7 @@ MFTFILETIME
 '''
 MFTFILETIME = Struct(
     'dwLowDateTime'         / Int32ul,
-    'dwHighDateTime'        / Int32ul,
-    '_DateTime'             / Computed(WindowsTime(this).parse())
+    'dwHighDateTime'        / Int32ul
 )
 
 '''
@@ -215,7 +254,7 @@ MFTFileNameAttribute = Struct(
     'ExtendedData'          / Int32ul,
     'FileNameLength'        / Int8ul,
     'FileNameNamespace'     / Int8ul,
-    'FileName'              / Computed(PascalString(Bytes(this.FileNameLength), encoding='UTF16'))
+    'FileName'              / PascalString(this.FileNameLength, encoding='utf16')
 )
 
 '''
@@ -234,4 +273,71 @@ MFTStandardInformationAttribute = Struct(
     'SecurityDescriptorID'  / Int32ul,
     'Quota'                 / Int64ul,
     'USN'                   / Int64ul
+)
+
+'''
+MFTDataRunEntry
+TODO: Incomplete
+'''
+MFTDataRunEntry = Struct(
+    'DataRunSize'           / Bitwise(BitsInteger(4, signed=True, swapped=True)),
+    'DataRunOffset'         / Bitwise(BitsInteger(4, swapped=True))
+)
+
+'''
+MFTAttributeListEntry
+'''
+MFTAttributeListEntry = Struct(
+    'AttributeTypeCode'     / MFTAttributeTypeCode,
+    'RecordLength'          / Int16ul,
+    'AttributeNameLength'   / Int8ul,
+    'AttributeNameOffset'   / Int8ul,
+    'LowestVcn'             / Int64ul,
+    'SegmentReference'      / MFTFileReference,
+    'AttributeIdentifier'   / Int16ul,
+    'AttributeName'         / PascalString(this.AttributeNameLength * 2, encoding='utf16')
+)
+
+'''
+MFTObjectID
+'''
+MFTObjectID = Struct(
+    'ObjectID'              / MFTGUID,
+    'BirthVolumeID'         / MFTGUID,
+    'BirthObjectID'         / MFTGUID,
+    'DomainID'              / MFTGUID
+)
+
+'''
+MFTSecurityDescriptorControlFlags
+'''
+MFTSecurityDescriptorControlFlags = Struct(
+    'Flags'                 / Int16ul,
+    'SE_OWNER_DEFAULTED'    / Computed(lambda this: this.Flags & 0x0001),
+    'SE_GROUP_DEFAULTED'    / Computed(lambda this: this.Flags & 0x0002),
+    'SE_DACL_PRESENT'       / Computed(lambda this: this.Flags & 0x0004),
+    'SE_DACL_DEFAULTED'     / Computed(lambda this: this.Flags & 0x0008),
+    'SE_SACL_PRESENT'       / Computed(lambda this: this.Flags & 0x0010),
+    'SE_SACL_DEFAULTED'     / Computed(lambda this: this.Flags & 0x0020),
+    'SE_DACL_AUTO_INHERIT_REQ'  / Computed(lambda this: this.Flags & 0x0100),
+    'SE_SACL_AUTO_INHERIT_REQ'  / Computed(lambda this: this.Flags & 0x0200),
+    'SE_DACL_AUTO_INHERITED'    / Computed(lambda this: this.Flags & 0x0400),
+    'SE_SACL_AUTO_INHERITED'    / Computed(lambda this: this.Flags & 0x0800),
+    'SE_DACL_PROTECTED'     / Computed(lambda this: this.Flags & 0x1000),
+    'SE_SACL_PROTECTED'     / Computed(lambda this: this.Flags & 0x2000),
+    'SE_RM_CONTROL_VALID'   / Computed(lambda this: this.Flags & 0x4000),
+    'SE_SELF_RELATIVE'      / Computed(lambda this: this.Flags & 0x8000)
+)
+
+'''
+MFTSecurityDescriptorHeader
+'''
+MFTSecurityDescriptorHeader = Struct(
+    'Revision'              / Int8ul,
+    'Sbz1'                  / Int8ul,
+    'Control'               / MFTSecurityDescriptorControlFlags,
+    'OwnerSIDOffset'        / Int32ul,
+    'GroupSIDOffset'        / Int32ul,
+    'SACLOffset'            / Int32ul,
+    'DACLOffset'            / Int32ul
 )
