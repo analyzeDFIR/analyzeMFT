@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-# mft_structs.py
+# mft.py
 # Noah Rubin
 # 02/01/2018
 
