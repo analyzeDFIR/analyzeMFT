@@ -7,43 +7,101 @@ from construct import *
 from src.utils.time import WindowsTime
 
 '''
-MFTGUID
+MFT GUID: globally unique identifier
+    Group1: first group of (8) hexadecimal digits of the GUID
+    Group2: second group of (4) hexadecimal digits of the GUID
+    Group3: third group of (4) hexadecimal digits of the GUID
+    Group4: fourth group of (4) hexadecimal digits of the GUID
+    Group5: fifth group of (12) hexadecimal digits of the GUID
+    NOTE:
+        A valid, full GUID is of the form:
+           (1)    (2)  (3)  (4)     (5)
+        6B29FC40-CA47-1067-B31D-00DD010662DA
 '''
 MFTGUID = Struct(
-    'Data1'             / Int32ul,
-    'Group1'            / Int16ul,
-    'Group2'            / Int16ul,
-    'Group3'            / Int16ul,
-    'Data2'             / BytesInteger(6, swapped=True)
+    'Group1'                / Int32ul,
+    'Group2'                / Int16ul,
+    'Group3'                / Int16ul,
+    'Group4'                / Int16ul,
+    'Group5'                / BytesInteger(6, swapped=True)
 )
 
 '''
-MFTSID
+MFT SID: Windows user/group security identifier
+    Revision: SID format revision number
+    SubAuthoritiesCount: Number of sub-authorities in this SID
+    Authority: 48-bit (big endian) identifier authority identifying the authority that issues the SID
+    SubAuthorities: Array of sub-authorities that identify the trustee relative to the authority (SID issuer)
+    NOTE:
+        A valid, full SID is of the form:
+        S-1-5-32-544
+        "S" is added when converting a SID to String form
+        "1" the revision number
+        "5" the identifier-authority value (SECURITY_NT_AUTHORITY)
+        "32" the first subauthority value (SECURITY_BUILTIN_DOMAIN_RID)
+        "544" the second subauthority value (DOMAIN_ALIAS_RID_ADMINS)
 '''
 MFTSID = Struct(
-    'Revision'          / Int8ul,
+    'Revision'              / Int8ul,
     'SubAuthoritiesCount'   / Int8ul,
-    'Authority'         / BytesInteger(6),
-    'SubAuthorities'    / Array(this.SubAuthoritiesCount, Int32ul)
+    'Authority'             / BytesInteger(6),
+    'SubAuthorities'        / Array(this.SubAuthoritiesCount, Int32ul)
+)
+
+MFTACEType = Enum(Int8ul, 
+    ACCESS_ALLOWED_ACE_TYPE                 = 0x00,
+    ACCESS_DENIED_ACE_TYPE                  = 0x01,
+    SYSTEM_AUDIT_ACE_TYPE                   = 0x02,
+    SYSTEM_ALARM_ACE_TYPE                   = 0x03,
+    ACCESS_ALLOWED_COMPOUND_ACE_TYPE        = 0x04,
+    ACCESS_ALLOWED_OBJECT_ACE_TYPE          = 0x05,
+    ACCESS_DENIED_OBJECT_ACE_TYPE           = 0x06,
+    SYSTEM_AUDIT_OBJECT_ACE_TYPE            = 0x07,
+    SYSTEM_ALARM_OBJECT_ACE_TYPE            = 0x08,
+    ACCESS_ALLOWED_CALLBACK_ACE_TYPE        = 0x09,
+    ACCESS_DENIED_CALLBACK_ACE_TYPE         = 0x0a,
+    ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE = 0x0b,
+    ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE  = 0x0c,
+    SYSTEM_AUDIT_CALLBACK_ACE_TYPE          = 0x0d,
+    SYSTEM_ALARM_CALLBACK_ACE_TYPE          = 0x0e,
+    SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE   = 0x0f,
+    SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE   = 0x10,
+    SYSTEM_MANDATORY_LABEL_ACE_TYPE         = 0x11
+)
+
+MFTACEFlags = FlagsEnum(Int8ul,
+    OBJECT_INHERIT_ACE          = 0x01,
+    CONTAINER_INHERIT_ACE       = 0x02,
+    NO_PROPAGATE_INHERIT_ACE    = 0x04,
+    INHERIT_ONLY_ACE            = 0x08,
+    SUCCESSFUL_ACCESS_ACE_FLAG  = 0x40,
+    FAILED_ACCESS_ACE_FLAG      = 0x80
 )
 
 '''
-MFTACLHeader
+MFT ACE Header: access control list entry
+    AceType: the ACE type (see: MFTACEType)
+    AceFlags: the ACE flags (see: MFTACEFlags)
+    AceSize: the size of the ACE in bytes
+'''
+MFTACEHeader = Struct(
+    'AceType'               / MFTACEType,
+    'AceFlags'              / MFTACEFlags,
+    'AceSize'               / Int16ul
+)
+
+'''
+MFT ACL Header: access control list header
+    AclRevision: the ACL revision number
+    AclSize: The total size of the ACL in bytes, including the ACL header and all ACEs
+    AceCount: The number of ACEs stored in the ACL
 '''
 MFTACLHeader = Struct(
-    'Revision'          / Int8ul,
+    'AclRevision'           / Int8ul,
     Padding(1),
-    'ACLSize'           / Int16ul,
-    'EntryCount'        / Int16ul
-)
-
-'''
-MFTACLEntry
-'''
-MFTACLEntryHeader = Struct(
-    'Type'              / Int8ul,
-    'Flags'             / MFTACLEntryFlags,
-    'ACLEntrySize'      / Int16ul
+    'AclSize'               / Int16ul,
+    'AceCount'              / Int16ul,
+    Padding(2)
 )
 
 '''
@@ -89,9 +147,9 @@ MFT File Reference: pointer to base (parent) MFT record (0 if this is base recor
     SequenceNumber: MFT entry sequence number
 '''
 MFTFileReference = Struct(
-    'SegmentNumber'     / Int32ul,
+    'SegmentNumber'         / Int32ul,
     Padding(2),
-    'SequenceNumber'    / Int16ul
+    'SequenceNumber'        / Int16ul
 )
 
 '''
@@ -159,24 +217,23 @@ MFTEntryMultiSectorHeader = Struct(
 '''
 MFTFileAttributeFlags
 '''
-MFTFileAttributeFlags = Struct(
-    'Flags'                 / Int32ul,
-    'READONLY'              / Computed(lambda this: this.Flags & 0x00000001),
-    'HIDDEN'                / Computed(lambda this: this.Flags & 0x00000002),
-    'SYSTEM'                / Computed(lambda this: this.Flags & 0x00000004),
-    'VOLUME'                / Computed(lambda this: this.Flags & 0x00000008),
-    'DIRECTORY'             / Computed(lambda this: this.Flags & 0x00000010),
-    'ARCHIVE'               / Computed(lambda this: this.Flags & 0x00000020),
-    'DEVICE'                / Computed(lambda this: this.Flags & 0x00000040),
-    'NORMAL'                / Computed(lambda this: this.Flags & 0x00000080),
-    'TEMPORARY',            / Computed(lambda this: this.Flags & 0x00000100),
-    'SPARSE_FILE',          / Computed(lambda this: this.Flags & 0x00000200),
-    'REPARSE_POINT',        / Computed(lambda this: this.Flags & 0x00000400),
-    'COMPRESSED',           / Computed(lambda this: this.Flags & 0x00000800),
-    'OFFLINE',              / Computed(lambda this: this.Flags & 0x00001000),
-    'NOT_CONTENT_INDEXED',  / Computed(lambda this: this.Flags & 0x00002000),
-    'ENCRYPTED',            / Computed(lambda this: this.Flags & 0x00004000),
-    'VIRTUAL'               / Computed(lambda this: this.Flags & 0x00010000)
+MFTFileAttributeFlags = FlagsEnum(Int32ul,
+    READONLY                = 0x00000001,
+    HIDDEN                  = 0x00000002,
+    SYSTEM                  = 0x00000004,
+    VOLUME                  = 0x00000008,
+    DIRECTORY               = 0x00000010,
+    ARCHIVE                 = 0x00000020,
+    DEVICE                  = 0x00000040,
+    NORMAL                  = 0x00000080,
+    TEMPORARY,              = 0x00000100,
+    SPARSE_FILE,            = 0x00000200,
+    REPARSE_POINT,          = 0x00000400,
+    COMPRESSED,             = 0x00000800,
+    OFFLINE,                = 0x00001000,
+    NOT_CONTENT_INDEXED,    = 0x00002000,
+    ENCRYPTED,              = 0x00004000,
+    VIRTUAL                 = 0x00010000
 )
 
 '''
@@ -210,9 +267,9 @@ MFTEntryHeader = Struct(
     'SequenceNumber'        / Int16ul,
     'ReferenceCount'        / Int16ul,
     'FirstAttributeOffset'  / Int16ul,
-    'Flags'                 / Int16ul,
-    '_Active'               / Computed(lambda this: this.Flags & 0x0001),
-    '_HasIndex'             / Computed(lambda this: this.Flags & 0x0002),
+    'Flags'                 / FlagsEnum(Int16ul,
+        ACTIVE      = 0x0001,
+        HAS_INDEX   = 0x0002),
     'UsedSize'              / Int32ul,
     'TotalSize'             / Int32ul,
     'BaseFileRecordSegment' / MFTFileReference,
@@ -311,22 +368,21 @@ MFTObjectID = Struct(
 '''
 MFTSecurityDescriptorControlFlags
 '''
-MFTSecurityDescriptorControlFlags = Struct(
-    'Flags'                 / Int16ul,
-    'SE_OWNER_DEFAULTED'    / Computed(lambda this: this.Flags & 0x0001),
-    'SE_GROUP_DEFAULTED'    / Computed(lambda this: this.Flags & 0x0002),
-    'SE_DACL_PRESENT'       / Computed(lambda this: this.Flags & 0x0004),
-    'SE_DACL_DEFAULTED'     / Computed(lambda this: this.Flags & 0x0008),
-    'SE_SACL_PRESENT'       / Computed(lambda this: this.Flags & 0x0010),
-    'SE_SACL_DEFAULTED'     / Computed(lambda this: this.Flags & 0x0020),
-    'SE_DACL_AUTO_INHERIT_REQ'  / Computed(lambda this: this.Flags & 0x0100),
-    'SE_SACL_AUTO_INHERIT_REQ'  / Computed(lambda this: this.Flags & 0x0200),
-    'SE_DACL_AUTO_INHERITED'    / Computed(lambda this: this.Flags & 0x0400),
-    'SE_SACL_AUTO_INHERITED'    / Computed(lambda this: this.Flags & 0x0800),
-    'SE_DACL_PROTECTED'     / Computed(lambda this: this.Flags & 0x1000),
-    'SE_SACL_PROTECTED'     / Computed(lambda this: this.Flags & 0x2000),
-    'SE_RM_CONTROL_VALID'   / Computed(lambda this: this.Flags & 0x4000),
-    'SE_SELF_RELATIVE'      / Computed(lambda this: this.Flags & 0x8000)
+MFTSecurityDescriptorControlFlags = FlagsEnum(Int16ul,
+    SE_OWNER_DEFAULTED      = 0x0001,
+    SE_GROUP_DEFAULTED      = 0x0002,
+    SE_DACL_PRESENT         = 0x0004,
+    SE_DACL_DEFAULTED       = 0x0008,
+    SE_SACL_PRESENT         = 0x0010,
+    SE_SACL_DEFAULTED       = 0x0020,
+    SE_DACL_AUTO_INHERIT_REQ    = 0x0100,
+    SE_SACL_AUTO_INHERIT_REQ    = 0x0200,
+    SE_DACL_AUTO_INHERITED      = 0x0400,
+    SE_SACL_AUTO_INHERITED      = 0x0800,
+    SE_DACL_PROTECTED       = 0x1000,
+    SE_SACL_PROTECTED       = 0x2000,
+    SE_RM_CONTROL_VALID     = 0x4000,
+    SE_SELF_RELATIVE        = 0x8000
 )
 
 '''
