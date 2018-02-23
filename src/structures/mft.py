@@ -4,7 +4,6 @@
 # 02/01/2018
 
 from construct import *
-from src.utils.time import WindowsTime
 
 '''
 MFT GUID: globally unique identifier
