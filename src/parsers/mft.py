@@ -53,7 +53,7 @@ class MFTEntry(BaseItem):
                 return None
         if self._stream is not None:
             try:
-                return stream.tell()
+                return self._stream.tell()
             except:
                 return None
     def parse_header(self, stream=None):
@@ -61,13 +61,15 @@ class MFTEntry(BaseItem):
         '''
         if stream is None:
             stream = self._stream
-        header = mftstructs.MFTEntryHeader.parse(stream)
-        return {key:value for key,value in header.items()}
-        #return {\
-        #    (key:dict(value) if not isinstance(value, (int, float, str, bool)) \
-        #    else key:value) \
-        #    for key,value in header.items()\
-        #}
+        header = mftstructs.MFTEntryHeader.parse_stream(stream)
+        if header.MultiSectorHeader.RawSignature == 0x454c4946:
+            header.MultiSectorHeader.Signature = 'FILE'
+        elif header.MultiSectorHeader.RawSignature == 0x44414142:
+            header.MultiSectorHeader.Signature = 'BAAD'
+        else:
+            header.MultiSectorHeader.Signature = 'CRPT'
+        def transform(value): return value if isinstance(value, (int, float, str, bool)) else dict(value)
+        return {key:transform(value) for key,value in header.items() if not key.startswith('Raw')}
     def parse(self):
         '''
         args:

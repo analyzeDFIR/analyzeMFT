@@ -63,7 +63,7 @@ NOTE:
     to the sequence number stride (512) or that do not transfer sectors out of order.
 '''
 MFTEntryMultiSectorHeader = Struct(
-    'Signature'                 / Int32ul,
+    'RawSignature'              / Int32ul,
     'UpdateSequenceArrayOffset' / Int16ul,
     'UpdateSequenceArraySize'   / Int16ul
 )
@@ -98,8 +98,8 @@ MFTEntryHeader = Struct(
     'TotalSize'             / Int32ul,
     'BaseFileRecordSegment' / NTFSFileReference,
     'FirstAttributeId'      / Int16ul,
-    Optional(Padding(2)),
-    'MFTRecordNumber'       / Optional(Int32ul)
+    Padding(2),
+    'MFTRecordNumber'       / Int32ul
 )
 
 '''
