@@ -10,10 +10,10 @@ from .general import NTFSFILETIME, MFTFileAttributeFlags
 MFTStandardInformationAttribute
 '''
 MFTStandardInformationAttribute = Struct(
-    'CreateTime'            / NTFSFILETIME,
-    'LastModifiedTime'      / NTFSFILETIME,
-    'EntryModifiedTime'     / NTFSFILETIME,
-    'LastAccessTime'        / NTFSFILETIME,
+    'RawCreateTime'         / NTFSFILETIME,
+    'RawLastModifiedTime'   / NTFSFILETIME,
+    'RawEntryModifiedTime'  / NTFSFILETIME,
+    'RawLastAccessTime'     / NTFSFILETIME,
     'FileAttributeFlags'    / MFTFileAttributeFlags,
     'MaximumVersions'       / Int32ul,
     'VersionNumber'         / Int32ul,

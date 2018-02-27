@@ -11,15 +11,14 @@ MFTFileNameAttribute
 '''
 MFTFileNameAttribute = Struct(
     'ParentDirectory'       / NTFSFileReference,
-    'CreateTime'            / NTFSFILETIME,
-    'LastModifiedTime'      / NTFSFILETIME,
-    'EntryModifiedTime'     / NTFSFILETIME,
-    'LastAccessTime'        / NTFSFILETIME,
+    'RawCreateTime'         / NTFSFILETIME,
+    'RawLastModifiedTime'   / NTFSFILETIME,
+    'RawEntryModifiedTime'  / NTFSFILETIME,
+    'RawLastAccessTime'     / NTFSFILETIME,
     'AllocatedFileSize'     / Int64ul,
     'FileSize'              / Int64ul,
     'FileAttributeFlags'    / MFTFileAttributeFlags,
     'ExtendedData'          / Int32ul,
     'FileNameLength'        / Int8ul,
-    'FileNameNamespace'     / Int8ul,
-    'FileName'              / PascalString(this.FileNameLength, encoding='utf16')
+    'FileNameNamespace'     / Int8ul
 )

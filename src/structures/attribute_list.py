@@ -17,5 +17,4 @@ MFTAttributeListEntry = Struct(
     'LowestVcn'             / Int64ul,
     'SegmentReference'      / NTFSFileReference,
     'AttributeIdentifier'   / Int16ul,
-    'AttributeName'         / PascalString(this.AttributeNameLength * 2, encoding='utf16')
 )
