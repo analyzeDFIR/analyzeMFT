@@ -16,13 +16,15 @@ class MFTAttributes(BaseItem):
     '''
     Represents resident attributes of an MFT entry
     '''
-    ATTRIBUTE_LIST          = Field(1)
-    FILE_NAME               = Field(2)
-    OBJECT_ID               = Field(3)
-    SECURITY_DESCRIPTOR     = Field(4)
-    STANDARD_INFORMATION    = Field(5)
+    STANDARD_INFORMATION    = Field(1)
+    ATTRIBUTE_LIST          = Field(2)
+    FILE_NAME               = Field(3)
+    OBJECT_ID               = Field(4)
+    SECURITY_DESCRIPTOR     = Field(5)
     VOLUME_NAME             = Field(6)
     VOLUME_INFORMATION      = Field(7)
+    DATA                    = Field(8)
+    INDEX_ROOT              = Field(9)
 
 class MFTEntry(BaseItem):
     '''
@@ -75,75 +77,113 @@ class MFTEntry(BaseItem):
         else:
             #TODO: implement custom exception
             raise Exception('No stream to tell position of')
-    def parse_standard_information(self, attribute_header, original_position, stream=None):
+    def _parse_index_root(self, attribute_header, original_position, stream):
+        '''
+        '''
+        #TODO
+        return None
+    def _parse_data(self, attribute_header, original_position, stream):
+        '''
+        '''
+        #TODO
+        return None
+    def _parse_volume_information(self, attribute_header, original_position, stream):
+        '''
+        '''
+        return self._transform_value(mftstructs.MFTVolumeInformation.parse_stream(stream))
+    def _parse_volume_name(self, attribute_header, original_position, stream):
+        '''
+        '''
+        #TODO: check if ValueLength * 2 or just ValueLength
+        return stream.read(attribute_header.get('Form').get('ValueLength')).decode('UTF16')
+    def _parse_security_descriptor(self, attribute_header, original_position, stream):
+        '''
+        '''
+        header_position = self.tell(stream=stream)
+        security_descriptor = dict(
+            Revision=None, 
+            Control=None, 
+            OwnerSID=None, 
+            GroupSID=None, 
+            SACL=None, 
+            DACL=None
+        )
+        security_descriptor_header = mftstructs.MFTSecurityDescriptorHeader.parse_stream(stream)
+        security_descriptor['Revision'] = security_descriptor_header.Revision
+        security_descriptor['Control'] = dict(security_descriptor_header.Control)
+        stream.seek(header_position + security_descriptor_header.OwnerSIDOffset)
+        security_descriptor['OwnerSID'] = mftstructs.NTFSSID.parse_stream(stream)
+        stream.seek(header_position + security_descriptor_header.GroupSIDOffset)
+        security_descriptor['GroupSID'] = mftstructs.NTFSSID.parse_stream(stream)
+        stream.seek(header_position + security_descriptor_header.SACLOffset)
+        stream.seek(header_position + security_descriptor_header.DACLOffset)
+        #TODO: parse SACL and DACL
+        return security_descriptor
+    def _parse_object_id(self, attribute_header, original_position, stream):
+        '''
+        '''
+        object_id = mftstructs.MFTObjectID.parse_stream(stream)
+        return self._transform_value(object_id)
+    def _parse_file_name(self, attribute_header, original_position, stream):
+        '''
+        '''
+        file_name = mftstructs.MFTFileNameAttribute.parse_stream(stream)
+        for field in file_name:
+            if field.startswith('Raw') and field.endswith('Time'):
+                file_name[field.replace('Raw', '')] = WindowsTime(file_name[field]).parse()
+        file_name.FileName = stream.read(file_name.FileNameLength * 2).decode('UTF16')
+        return self._transform_value(file_name)
+    def _parse_attribute_list(self, attribute_header, original_position, stream):
+        '''
+        '''
+        attributes = MFTAttributes()
+        while self.tell(stream=stream) < attribute_header.get('Form').get('ValueLength'):
+            AL_original_position = self.tell(stream=stream)
+            attribute_list_entry = mftstructs.MFTAttributeListEntry.parse_stream(stream)
+            stream.seek(AL_original_position + attribute_list_entry.AttributeNameOffset)
+            attribute_list_entry.AttributeName = stream.read(attribute_list_entry.AttributeNameLength * 2).decode('UTF16')
+            if attributes[attribute_list_entry.AttributeTypeCode] is None:
+                attributes[attribute_list_entry.AttributeTypeCode] = list()
+            attributes[attribute_list_entry.AttributeTypeCode].append(self._transform_value(attribute_list_entry))
+        return self._transform_value(attributes)
+    def _parse_standard_information(self, attribute_header, original_position, stream):
+        '''
+        '''
+        standard_information = mftstructs.MFTStandardInformationAttribute.parse_stream(stream)
+        for field in standard_information:
+            if field.startswith('Raw') and field.endswith('Time'):
+                standard_information[field.replace('Raw', '')] = WindowsTime(standard_information[field]).parse()
+        return self._transform_value(standard_information)
+    def parse_attribute(self, attribute_header, original_position, *args, stream=None, **kwargs):
         '''
         '''
         if stream is None:
             stream = self._stream
         stream.seek(original_position + attribute_header.get('Form').get('ValueOffset'))
         try:
-            standard_information = mftstructs.MFTStandardInformationAttribute.parse_stream(stream)
-            for field in standard_information:
-                if field.startswith('Raw') and field.endswith('Time'):
-                    standard_information[field.replace('Raw', '')] = WindowsTime(standard_information[field]).parse()
-            return self._transform_value(standard_information)
+            attribute_parser = getattr(self, '_parse_' + attribute_header.get('TypeCode').lower(), None)
+            if attribute_parser is None:
+                #TODO: raise custom exception
+                return None
+            else:
+                return attribute_parser(attribute_header, original_position, stream, *args, **kwargs)
         finally:
             stream.seek(original_position)
-    def parse_object_id(self, attribute_header, original_position, stream=None):
+    def parse_attribute_header(self, original_position, stream=None):
         '''
         '''
         if stream is None:
             stream = self._stream
-        stream.seek(original_position + attribute_header.get('Form').get('ValueOffset'))
-        try:
-            object_id = mftstructs.MFTObjectID.parse_stream(stream)
-            return self._transform_value(object_id)
-        finally:
-            stream.seek(original_position)
-    def parse_file_name(self, attribute_header, original_position, stream=None):
-        '''
-        '''
-        if stream is None:
-            stream = self._stream
-        stream.seek(original_position + attribute_header.get('Form').get('ValueOffset'))
-        try:
-            file_name = mftstructs.MFTFileNameAttribute.parse_stream(stream)
-            for field in file_name:
-                if field.startswith('Raw') and field.endswith('Time'):
-                    file_name[field.replace('Raw', '')] = WindowsTime(file_name[field]).parse()
-            file_name.FileName = stream.read(file_name.FileNameLength * 2).decode('UTF16')
-            return self._transform_value(file_name)
-        finally:
-            stream.seek(original_position)
-    def parse_attribute_list(self, attribute_header, original_position, stream=None):
-        '''
-        '''
-        if stream is None:
-            stream = self._stream
-        stream.seek(original_position + attribute_header.get('Form').get('ValueOffset'))
-        try:
-            attributes = MFTAttributes()
-            while self.tell(stream=stream) < attribute_header.get('Form').get('ValueLength'):
-                AL_original_position = self.tell(stream=stream)
-                attribute_list_entry = mftstructs.MFTAttributeListEntry.parse_stream(stream)
-                stream.seek(AL_original_position + attribute_list_entry.AttributeNameOffset)
-                attribute_list_entry.AttributeName = stream.read(attribute_list_entry.AttributeNameLength * 2).decode('UTF16')
-                if attributes[attribute_list_entry.AttributeTypeCode] is None:
-                    attributes[attribute_list_entry.AttributeTypeCode] = list()
-                attributes[attribute_list_entry.AttributeTypeCode].append(self._transform_value(attribute_list_entry))
-            return self._transform_value(attributes)
-        finally:
-            stream.seek(original_position)
-    def get_attribute_parser(self, type_code):
-        '''
-        '''
-        return getattr(self, 'parse_' + type_code.lower(), None)
-    def parse_attribute_header(self, stream=None):
-        '''
-        '''
-        if stream is None:
-            stream = self._stream
-        return self._transform_value(mftstructs.MFTAttributeHeader.parse_stream(stream))
+        attribute_header = mftstructs.MFTAttributeHeader.parse_stream(stream)
+        if attribute_header.NameLength > 0:
+            try:
+                stream.seek(original_position + attribute_header.NameOffset)
+                attribute_header.Name = stream.read(attribute_header.NameLength * 2.).decode('UTF16')
+            except:
+                attribute_header.Name = None
+        else:
+            attribute_header.Name = None
+        return self._transform_value(attribute_header)
     def parse_next_attribute(self, stream=None, header=None):
         '''
         '''
@@ -152,28 +192,21 @@ class MFTEntry(BaseItem):
         if header is None:
             header = self.header
         original_position = self.tell(stream=stream)
-        attribute_header = self.parse_attribute_header(stream=stream)
+        type_code = mftstructs.MFTAttributeTypeCode.parse_stream(stream)
+        if type_code == 'END_OF_ATTRIBUTES':
+            return None, None
+        stream.seek(original_position)
         try:
-            attribute_parser = self.get_attribute_parser(attribute_header.TypeCode)
-            if attribute_header.TypeCode == 'END_OF_ATTRIBUTES' or \
-                attribute_parser is None or \
-                attribute_header.FormCode != 0:
-                return attribute_header.TypeCode, None
-            if attribute_header.NameLength > 0:
-                stream.seek(original_position + attribute_header.NameOffset)
-                attribute_header.Name = stream.read(attribute_header.NameLength * 2.).decode('UTF16')
-            else:
-                attribute_header.Name = None
-            attribute_body = attribute_parser(attribute_header, original_position, stream=stream)
+            attribute_header = self.parse_attribute_header(stream=stream)
+            if attribute_header.get('TypeCode') == 'END_OF_ATTRIBUTES' or attribute_header.get('FormCode') != 0:
+                return attribute_header.get('TypeCode'), None
+            attribute_body = parse_attribute(attribute_header, original_position, stream=stream)
             return ( \
                 attribute_header.get('TypeCode'), \
-                { \
-                    'Header': self._transform_value(attribute_header), \
-                    'Body': self._transform_value(attribute_body) \
-                }\
+                { 'Header': attribute_header, 'Body': attribute_body }
             )
         finally:
-            stream.seek(original_position + attribute_header.RecordLength)
+            stream.seek(original_position + attribute_header.get('RecordLength'))
     def parse_header(self, stream=None):
         '''
         '''

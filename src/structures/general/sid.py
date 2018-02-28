@@ -26,3 +26,17 @@ NTFSSID = Struct(
     'Authority'             / BytesInteger(6),
     'SubAuthorities'        / Array(this.SubAuthoritiesCount, Int32ul)
 )
+
+def sid_to_string(sid):
+    '''
+    Args:
+        sid: NTFSSID    => sid struct to convert to string
+    Returns:
+        String containing SID string in the form shown above
+    Preconditions:
+        sid is instance of NTFSSID
+    '''
+    return '-'.join(
+        ['S', str(sid.Revision), str(sid.Authority)] + \
+        [str(sub_authority) for sub_authority in sid.SubAuthorities]
+    ) 
