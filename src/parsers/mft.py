@@ -25,6 +25,7 @@ class MFTAttributes(BaseItem):
     VOLUME_INFORMATION      = Field(7)
     DATA                    = Field(8)
     INDEX_ROOT              = Field(9)
+    INDEX_ALLOCATION        = Field(10)
 
 class MFTEntry(BaseItem):
     '''
@@ -77,6 +78,11 @@ class MFTEntry(BaseItem):
         else:
             #TODO: implement custom exception
             raise Exception('No stream to tell position of')
+    def _parse_index_allocation(self, attribute_header, original_position, stream):
+        '''
+        '''
+        #TODO
+        return None
     def _parse_index_root(self, attribute_header, original_position, stream):
         '''
         '''
