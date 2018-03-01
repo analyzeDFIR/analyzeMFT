@@ -96,6 +96,30 @@ class MFTEntry(BaseItem):
         '''
         #TODO: check if ValueLength * 2 or just ValueLength
         return stream.read(attribute_header.get('Form').get('ValueLength')).decode('UTF16')
+    def parse_access_control_list(self, stream=None):
+        '''
+        '''
+        if stream is None:
+            stream = self._stream
+        try:
+            acl_header = mftstructs.MFTACLHeader.parse_stream(stream)
+            acl_position = stream.tell()
+            acl_size = acl_header.AclSize - mftstructs.MFTACLHeader.sizeof()
+            acl_body = list()
+            while (stream.tell() - acl_position) < acl_size:
+                ace_position = stream.tell()
+                try:
+                    ace_header = mftstructs.MFTACEHeader.parse_stream(stream)
+                    acl_body.append(dict(Header=ace_header, Body=None))
+                    stream.seek(ace_position + ace_header.AceSize)
+                except:
+                    break
+            return dict(
+                Header=self._transform_value(acl_header), 
+                Body=self._transform_value(acl_body) if len(acl_body) > 0 else None
+            )
+        except:
+            return None
     def _parse_security_descriptor(self, attribute_header, original_position, stream):
         '''
         '''
@@ -116,8 +140,9 @@ class MFTEntry(BaseItem):
         stream.seek(header_position + security_descriptor_header.GroupSIDOffset)
         security_descriptor['GroupSID'] = mftstructs.NTFSSID.parse_stream(stream)
         stream.seek(header_position + security_descriptor_header.SACLOffset)
+        security_descriptor['SACL'] = self.parse_access_control_list(stream=stream)
         stream.seek(header_position + security_descriptor_header.DACLOffset)
-        #TODO: parse SACL and DACL
+        security_descriptor['DACL'] = self.parse_access_control_list(stream=stream)
         return security_descriptor
     def _parse_object_id(self, attribute_header, original_position, stream):
         '''

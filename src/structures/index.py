@@ -29,7 +29,7 @@ MFTIndexValue = Struct(
 MFTIndexEntryHeader
 '''
 MFTIndexEntryHeader = Struct(
-    'Signature'             / Const('INDX'),
+    'Signature'             / Const(b'INDX'),
     'FixupValuesOffset'     / Int16ul,
     'FixupValuesCount'      / Int16ul,
     'LogFileSequenceNumber' / Int64ul,
@@ -40,7 +40,7 @@ MFTIndexEntryHeader = Struct(
 MFTIndexNodeFlags
 '''
 MFTIndexNodeFlags = FlagsEnum(Int32ul,
-    'HasIndexAllocation'    = 0x00000001
+    HasIndexAllocation      = 0x00000001
 )
 
 '''
