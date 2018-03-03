@@ -53,6 +53,6 @@ def initialize_logger(log_path, log_prefix=None, format=LOGGING_DEFAULTS.get('fo
     assert isinstance(log_path, str) and path.exists(log_path), 'Log_path is not a valid path'
     assert isinstance(log_prefix, (type(None), str)), 'Log_prefix is not of type String'
     if log_prefix is None:
-        log_prefix = 'pmft_' + datetime.utcnow().strftime('%Y%m%d')
+        log_prefix = 'amft_' + datetime.utcnow().strftime('%Y%m%d')
     full_log_path = path.join(path.abspath(log_path), log_prefix + '.log')
     logging.basicConfig(filename=full_log_path, format=format, datefmt=datefmt, level=level)

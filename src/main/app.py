@@ -10,5 +10,5 @@ from src.main.cli import initialize_parser
 def amft_main():
     parser = initialize_parser()
     args = parser.parse_args()
-    #args.func(args)
+    args.func(args)
     return 0

@@ -65,7 +65,7 @@ class WorkerPool(object):
     '''
     Class to manage pool of QueueWorker instances
     '''
-    def __init__(self, task_queue, *args, worker_class=QueueWorker, daemonize=True, worker_count=(2 if cpu_count() <= 4 else 4), **kwargs):
+    def __init__(self, task_queue, *args, worker_class=LoggedQueueWorker, daemonize=True, worker_count=(2 if cpu_count() <= 4 else 4), **kwargs):
         self._worker_class = worker_class
         self._queue = task_queue
         self._task_args = args

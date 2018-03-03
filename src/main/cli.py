@@ -3,7 +3,8 @@
 # Noah Rubin
 # 01/31/2018
 
-import os
+import sys
+from os import path
 from argparse import ArgumentParser
 
 from src.main.directives import DirectiveRegistry
@@ -17,11 +18,11 @@ def DBConnectConfig(arg):
     Preconditions:
         arg is of type String   (assumed True)
     '''
-    ext = os.path.splitext(arg)
-    if ext in set(['.db', '.sqlite']) or not os.path.exists(os.path.dirname(arg)):
+    ext = path.splitext(arg)
+    if ext in set(['.db', '.sqlite']) or not path.exists(path.dirname(arg)):
         return arg
     try:
-        with open(os.path.abspath(arg), 'r') as config:
+        with open(path.abspath(arg), 'r') as config:
             connect = config.read().strip()
         return connect
     except Exception as e:
@@ -35,6 +36,8 @@ def initialize_parser():
 
     ## Base parent
     base_parent = ArgumentParser(add_help=False)
+    base_parent.add_argument('--lpath', type=str, default=path.abspath(path.dirname(sys.argv[0])), help='Path to log file directory (i.e. /path/to/logs or C:\\Users\\<user>\\Documents\\)', dest='log_path')
+    base_parent.add_argument('--lpref', type=str, default=None, help='Prefix for log file (default: amft_<date>)', dest='log_prefix')
     base_parent.add_argument('-s', '--source', action='append', help='Path to input file(s)', dest='sources')
 
     ## Base output parent
@@ -43,11 +46,11 @@ def initialize_parser():
 
     ## CSV output parent parser
     csv_output_parent = ArgumentParser(parents=[base_output_parent], add_help=False)
-    csv_output_parent.add_argument('--sep', default=',', help='Output file separator', dest='sep')
+    csv_output_parent.add_argument('-S', '--sep', default=',', help='Output file separator (default: ",")', dest='sep')
 
     ## Bodyfile output parent parser
     body_output_parent = ArgumentParser(parents=[base_output_parent], add_help=False)
-    body_output_parent.add_argument('--sep', default='|', choices=['|'], help='Output file separator', dest='sep')
+    body_output_parent.add_argument('-S', '--sep', default='|', choices=['|'], help='Output file separator (default: "|")', dest='sep')
 
     ## DB connect parent parser
     db_connect_parent = ArgumentParser(add_help=False)
@@ -65,6 +68,11 @@ def initialize_parser():
 
     # CSV parse directive
     csv_parse_directive = parse_subdirectives.add_parser('csv', parents=[base_parent, csv_output_parent], help='Parse $MFT file to csv')
+    csv_parse_directive.add_argument('info_type', \
+        type=str, \
+        default='summary', \
+        choices=['summary', 'header', 'stdinfo', 'attrlist', 'fname', 'objid', 'secdesc', 'volname', 'volinfo', 'data', 'idxroot', 'idxalloc'], \
+        help='Type of information to output')
     
     # Bodyfile parse directive
     body_parse_directive = parse_subdirectives.add_parser('body', parents=[base_parent, body_output_parent], help='Parse $MFT MAC times to bodyfile')
