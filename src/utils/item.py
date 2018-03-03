@@ -164,12 +164,6 @@ class BaseItem(FieldBoundDict, metaclass=ItemMeta):
         @BaseItem._transform_from
         '''
         return cls._transform_from(cls._JSON_transform_from, input_json)
-    @classmethod
-    def from_CSV(cls, input_csv, sep=','):
-        '''
-        @BaseItem._transform_from
-        '''
-        return cls._transform_from(cls._CSV_transform_from, input_csv, sep)
 
     def _transform_to(self, transform, *args, **kwargs):
         '''
@@ -190,8 +184,3 @@ class BaseItem(FieldBoundDict, metaclass=ItemMeta):
         @BaseItem._transform_to
         '''
         return self._transform_to(self._JSON_transform_to)
-    def to_CSV(self, sep=','):
-        '''
-        @BaseItem._transform_to
-        '''
-        return self._transform_to(self._CSV_transform_to, sep)

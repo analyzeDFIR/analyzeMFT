@@ -170,12 +170,19 @@ class MFTEntry(BaseItem):
         attributes = MFTAttributes()
         while self.tell(stream=stream) < attribute_header.get('Form').get('ValueLength'):
             AL_original_position = self.tell(stream=stream)
-            attribute_list_entry = mftstructs.MFTAttributeListEntry.parse_stream(stream)
-            stream.seek(AL_original_position + attribute_list_entry.AttributeNameOffset)
-            attribute_list_entry.AttributeName = stream.read(attribute_list_entry.AttributeNameLength * 2).decode('UTF16')
-            if attributes[attribute_list_entry.AttributeTypeCode] is None:
-                attributes[attribute_list_entry.AttributeTypeCode] = list()
-            attributes[attribute_list_entry.AttributeTypeCode].append(self._transform_value(attribute_list_entry))
+            try:
+                attribute_list_entry = mftstructs.MFTAttributeListEntry.parse_stream(stream)
+                if attribute_list_entry.AttributeTypeCode == 'END_OF_ATTRIBUTES':
+                    break
+                stream.seek(AL_original_position + attribute_list_entry.AttributeNameOffset)
+                attribute_list_entry.AttributeName = stream.read(attribute_list_entry.AttributeNameLength * 2).decode('UTF16')
+            except:
+                break
+            else:
+                if attributes[attribute_list_entry.AttributeTypeCode] is None:
+                    attributes[attribute_list_entry.AttributeTypeCode] = list()
+                attributes[attribute_list_entry.AttributeTypeCode].append(self._transform_value(attribute_list_entry))
+                stream.seek(AL_original_position + attribute_list_entry.RecordLength)
         return self._transform_value(attributes)
     def _parse_standard_information(self, attribute_header, original_position, stream):
         '''
