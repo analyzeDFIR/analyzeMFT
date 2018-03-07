@@ -3,10 +3,10 @@
 # Noah Rubin
 # 02/21/2017
 
-from io import BytesIO
-from construct import Container, Construct
 import logging
 Logger = logging.getLogger(__name__)
+from io import BytesIO
+from construct.lib import Container
 
 import src.structures.mft as mftstructs
 from src.utils.time import WindowsTime
@@ -34,9 +34,8 @@ class MFTEntry(BaseItem):
     header      = Field(1)
     attributes  = Field(2)
 
-    def __init__(self, raw_entry, load=True):
-        super(MFTEntry, self).__init__()
-        self.header = None
+    def __init__(self, raw_entry, *args, load=False, **kwargs):
+        super(MFTEntry, self).__init__(*args, **kwargs)
         self.attributes = MFTAttributes()
         for key in self.attributes.iterkeys:
             self.attributes[key] = list()
@@ -44,15 +43,17 @@ class MFTEntry(BaseItem):
         self.raw_entry = raw_entry
         if load:
             self.parse()
-    def _transform_value(self, value):
+    def _clean_transform(self, value):
         '''
         '''
-        if issubclass(type(value), (Container, Construct)):
-            return { \
-                key : self._transform_value(val) \
-                for key,val in value.items() \
-                if not key.startswith('Raw') \
-            }
+        if issubclass(type(value), Container):
+            cleaned_value = Container(value)
+            for key in cleaned_value.keys():
+                if key.startswith('Raw'):
+                    del cleaned_value[key]
+                else:
+                    cleaned_value[key] = self._clean_transform(cleaned_value[key])
+            return cleaned_value
         else:
             return value
     def get_stream(self, persist=False):
@@ -96,34 +97,34 @@ class MFTEntry(BaseItem):
     def _parse_volume_information(self, attribute_header, original_position, stream):
         '''
         '''
-        return self._transform_value(mftstructs.MFTVolumeInformation.parse_stream(stream))
+        return self._clean_transform(mftstructs.MFTVolumeInformation.parse_stream(stream))
     def _parse_volume_name(self, attribute_header, original_position, stream):
         '''
         '''
         #TODO: check if ValueLength * 2 or just ValueLength
         return stream.read(attribute_header.get('Form').get('ValueLength')).decode('UTF16')
-    def parse_access_control_list(self, stream=None):
+    def _parse_access_control_list(self, stream=None):
         '''
         '''
         if stream is None:
             stream = self._stream
         try:
-            acl_header = mftstructs.MFTACLHeader.parse_stream(stream)
+            acl = Container()
+            acl.Header = mftstructs.MFTACLHeader.parse_stream(stream)
             acl_position = stream.tell()
-            acl_size = acl_header.AclSize - mftstructs.MFTACLHeader.sizeof()
-            acl_body = list()
+            acl_size = acl.Header.AclSize - mftstructs.MFTACLHeader.sizeof()
+            acl.Body = list()
             while (stream.tell() - acl_position) < acl_size:
                 ace_position = stream.tell()
                 try:
-                    ace_header = mftstructs.MFTACEHeader.parse_stream(stream)
-                    acl_body.append(dict(Header=ace_header, Body=None))
-                    stream.seek(ace_position + ace_header.AceSize)
+                    ace = Container()
+                    ace.Header = mftstructs.MFTACEHeader.parse_stream(stream)
+                    ace.Body = None
+                    acl.Body.append(ace)
+                    stream.seek(ace_position + ace.Header.AceSize)
                 except:
                     break
-            return dict(
-                Header=self._transform_value(acl_header), 
-                Body=self._transform_value(acl_body) if len(acl_body) > 0 else None
-            )
+            return self._clean_transform(acl)
         except:
             return None
     def _parse_security_descriptor(self, attribute_header, original_position, stream):
@@ -146,15 +147,15 @@ class MFTEntry(BaseItem):
         stream.seek(header_position + security_descriptor_header.GroupSIDOffset)
         security_descriptor['GroupSID'] = mftstructs.NTFSSID.parse_stream(stream)
         stream.seek(header_position + security_descriptor_header.SACLOffset)
-        security_descriptor['SACL'] = self.parse_access_control_list(stream=stream)
+        security_descriptor['SACL'] = self._parse_access_control_list(stream=stream)
         stream.seek(header_position + security_descriptor_header.DACLOffset)
-        security_descriptor['DACL'] = self.parse_access_control_list(stream=stream)
+        security_descriptor['DACL'] = self._parse_access_control_list(stream=stream)
         return security_descriptor
     def _parse_object_id(self, attribute_header, original_position, stream):
         '''
         '''
         object_id = mftstructs.MFTObjectID.parse_stream(stream)
-        return self._transform_value(object_id)
+        return self._clean_transform(object_id)
     def _parse_file_name(self, attribute_header, original_position, stream):
         '''
         '''
@@ -163,7 +164,7 @@ class MFTEntry(BaseItem):
             if field.startswith('Raw') and field.endswith('Time'):
                 file_name[field.replace('Raw', '')] = WindowsTime(file_name[field]).parse()
         file_name.FileName = stream.read(file_name.FileNameLength * 2).decode('UTF16')
-        return self._transform_value(file_name)
+        return self._clean_transform(file_name)
     def _parse_attribute_list(self, attribute_header, original_position, stream):
         '''
         '''
@@ -181,9 +182,9 @@ class MFTEntry(BaseItem):
             else:
                 if attributes[attribute_list_entry.AttributeTypeCode] is None:
                     attributes[attribute_list_entry.AttributeTypeCode] = list()
-                attributes[attribute_list_entry.AttributeTypeCode].append(self._transform_value(attribute_list_entry))
+                attributes[attribute_list_entry.AttributeTypeCode].append(self._clean_transform(attribute_list_entry))
                 stream.seek(AL_original_position + attribute_list_entry.RecordLength)
-        return self._transform_value(attributes)
+        return self._clean_transform(attributes)
     def _parse_standard_information(self, attribute_header, original_position, stream):
         '''
         '''
@@ -191,15 +192,15 @@ class MFTEntry(BaseItem):
         for field in standard_information:
             if field.startswith('Raw') and field.endswith('Time'):
                 standard_information[field.replace('Raw', '')] = WindowsTime(standard_information[field]).parse()
-        return self._transform_value(standard_information)
+        return self._clean_transform(standard_information)
     def parse_attribute(self, attribute_header, original_position, *args, stream=None, **kwargs):
         '''
         '''
         if stream is None:
             stream = self._stream
-        stream.seek(original_position + attribute_header.get('Form').get('ValueOffset'))
+        stream.seek(original_position + attribute_header.Form.ValueOffset)
         try:
-            attribute_parser = getattr(self, '_parse_' + attribute_header.get('TypeCode').lower(), None)
+            attribute_parser = getattr(self, '_parse_' + attribute_header.TypeCode.lower(), None)
             if attribute_parser is None:
                 #TODO: raise custom exception
                 return None
@@ -221,8 +222,8 @@ class MFTEntry(BaseItem):
                 attribute_header.Name = None
         else:
             attribute_header.Name = None
-        return self._transform_value(attribute_header)
-    def parse_next_attribute(self, stream=None, header=None):
+        return self._clean_transform(attribute_header)
+    def parse_next_attribute(self, stream=None, header=None, attr_filter=None):
         '''
         '''
         if stream is None:
@@ -231,18 +232,19 @@ class MFTEntry(BaseItem):
             header = self.header
         original_position = self.tell(stream=stream)
         type_code = mftstructs.MFTAttributeTypeCode.parse_stream(stream)
-        if type_code == 'END_OF_ATTRIBUTES':
+        if type_code == 'END_OF_ATTRIBUTES' or \
+            (attr_filter is not None and type_code not in attr_filter):
             return None, None
         stream.seek(original_position)
+        next_attribute = Container()
+        next_attribute.Header = self.parse_attribute_header(original_position, stream=stream)
         try:
-            attribute_header = self.parse_attribute_header(stream=stream)
-            if attribute_header.get('TypeCode') == 'END_OF_ATTRIBUTES' or attribute_header.get('FormCode') != 0:
-                return attribute_header.get('TypeCode'), None
-            attribute_body = parse_attribute(attribute_header, original_position, stream=stream)
-            return ( \
-                attribute_header.get('TypeCode'), \
-                { 'Header': attribute_header, 'Body': attribute_body }
-            )
+            if next_attribute.Header.FormCode != 0:
+                return next_attribute.Header.TypeCode, None
+            next_attribute.Data = self.parse_attribute(attribute_header, original_position, stream=stream)
+            return next_attribute.Header.TypeCode, self._clean_transform(next_attribute)
+        except:
+            return next_attribute.Header.TypeCode, None
         finally:
             stream.seek(original_position + attribute_header.get('RecordLength'))
     def parse_header(self, stream=None):
@@ -257,8 +259,8 @@ class MFTEntry(BaseItem):
             header.MultiSectorHeader.Signature = 'BAAD'
         else:
             header.MultiSectorHeader.Signature = 'CRPT'
-        return self._transform_value(header)
-    def parse(self):
+        return self._clean_transform(header)
+    def parse(self, attr_filter=None):
         '''
         args:
             N/A
@@ -271,9 +273,9 @@ class MFTEntry(BaseItem):
         try:
             self.get_stream(True)
             self.header = self.parse_header()
-            self._stream.seek(header.get('FirstAttributeOffset'))
+            self._stream.seek(self.header.get('FirstAttributeOffset'))
             while self.tell() < self.header.get('UsedSize'):
-                attribute_type, attribute_data = self.parse_next_attribute()
+                attribute_type, attribute_data = self.parse_next_attribute(attr_filter=attr_filter)
                 if attribute_type is None:
                     break
                 elif attribute_data is not None:

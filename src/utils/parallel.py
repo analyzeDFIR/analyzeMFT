@@ -3,8 +3,9 @@
 # Noah Rubin
 # 02/05/2018
 
-from uuid import uuid4
 import logging
+Logger = logging.getLogger(__name__)
+from uuid import uuid4
 from multiprocessing import Process, JoinableQueue, cpu_count
 
 from src.utils.config import initialize_logger
@@ -13,25 +14,21 @@ class QueueWorker(Process):
     '''
     Class to spawn worker process with queue of tasks
     '''
-    def __init__(self, queue, *args, name=lambda: str(uuid4()), **kwargs):
-        super(QueueWorker, self).__init__(name=name)
+    def __init__(self, queue, name=lambda: str(uuid4())):
+        super(QueueWorker, self).__init__(name=name() if callable(name) else name)
         self._queue = queue
-        self._args = args
-        self.name = name() if callable(name) else name
-        self._kwargs = kwargs
     def __repr__(self):
-        return 'QueueWorker(%s,%s name=%s%s)'%(\
-            type(self._queue).__name__ + '()',\
-            ' *' + str(self._args) + ', ' if len(self._args) > 0 else '',\
-            self.name,\
-            ', **' + str(self._kwargs) if len(self._kwargs) > 0 else '')
+        return 'QueueWorker(%s, name=%s)'%(type(self._queue).__name__ + '()', self.name)
+            #' *' + str(self._args) + ', ' if len(self._args) > 0 else '',\
+            #self.name,\
+            #', **' + str(self._kwargs) if len(self._kwargs) > 0 else '')
     def run(self):
         '''
         Args:
             N/A
         Procedure:
             Run the worker, picking tasks off the queue until 
-            a poison pill is encountered
+            a poison pill (None) is encountered
         Preconditions:
             N/A
         '''
@@ -41,9 +38,9 @@ class QueueWorker(Process):
             if task is None:
                 break
             try:
-                task(*args, **kwargs)
+                task(self.name)
             except Exception as e:
-                logging.getLogger(__name__).error('Uncaught exception while executing %s (%s)'%(type(task).__name__, str(e)))
+                Logger.error('Uncaught exception while executing %s (%s)'%(type(task).__name__, str(e)))
 
 class LoggedQueueWorker(QueueWorker):
     '''
@@ -57,19 +54,19 @@ class LoggedQueueWorker(QueueWorker):
         @QueueWorker.run
         '''
         initialize_logger(self._log_path, self.name + '_tmp_pmft')
-        logging.getLogger(__name__).info('Started worker: ' + self.name)
+        Logger.info('Started worker: ' + self.name)
         super(LoggedQueueWorker, self).run()
-        logging.getLogger(__name__).info('Ended worker: ' + self.name)
+        Logger.info('Ended worker: ' + self.name)
 
 class WorkerPool(object):
     '''
     Class to manage pool of QueueWorker instances
     '''
-    def __init__(self, task_queue, *args, worker_class=LoggedQueueWorker, daemonize=True, worker_count=(2 if cpu_count() <= 4 else 4), **kwargs):
-        self._worker_class = worker_class
+    def __init__(self, task_queue, task_class, daemonize=True, worker_class=LoggedQueueWorker, worker_count=(2 if cpu_count() <= 4 else 4), task_kwargs=dict()):
         self._queue = task_queue
-        self._task_args = args
-        self._task_kwargs = kwargs
+        self._task_class = task_class
+        self._worker_class = worker_class
+        self._task_kwargs = task_kwargs
         self._workers = None
         self.daemon = daemonize
         self.worker_count = worker_count
@@ -81,7 +78,7 @@ class WorkerPool(object):
             str(self.daemon),\
             str(self.worker_count),\
             ', **' + str(self._task_kwargs) if len(self._task_kwargs) > 0 else '')
-    def add_task(self, task):
+    def add_task(self, *args, **kwargs):
         '''
         Args:
             N/A
@@ -90,10 +87,14 @@ class WorkerPool(object):
         Preconditions:
             N/A
         '''
-        if hasattr(self._queue, 'put_nowait'):
-            self._queue.put_nowait(task)
-        else:
-            self._queue.put(task)
+        action = 'put_nowait' if hasattr(self._queue, 'put_nowait') else 'put'
+        task_args = dict(kwargs)
+        task_args.update(self._task_args)
+        try:
+            getattr(self._queue, action)(self._task_class(*args, **task_args))
+        except Exception as e:
+            #TODO create custom exception
+            raise Exception('Failed to add task to queue (%s)'%str(e))
     def add_poison_pills(self):
         '''
         Args:

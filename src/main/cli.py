@@ -68,10 +68,11 @@ def initialize_parser():
 
     # CSV parse directive
     csv_parse_directive = parse_subdirectives.add_parser('csv', parents=[base_parent, csv_output_parent], help='Parse $MFT file to csv')
+    #TODO: support idxroot and idxalloc (potentially together?)
     csv_parse_directive.add_argument('info_type', \
         type=str, \
         default='summary', \
-        choices=['summary', 'header', 'stdinfo', 'attrlist', 'fname', 'objid', 'secdesc', 'volname', 'volinfo', 'data', 'idxroot', 'idxalloc'], \
+        choices=['summary'], \
         help='Type of information to output')
     
     # Bodyfile parse directive

@@ -11,6 +11,8 @@ from argparse import Namespace
 
 from src.utils.config import initialize_logger
 from src.utils.registry import RegistryMetaclassMixin 
+import src.utils.parallel as parallel
+import src.main.tasks as tasks
 
 class DirectiveRegistry(RegistryMetaclassMixin, type):
     '''
@@ -39,6 +41,8 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
     be referenced outside of this module unless type checking
     a directive class.
     '''
+    MFT_RECORD_SIZE = 1024
+
     @staticmethod
     def get_frontier(sources, gen=True):
         '''
@@ -117,8 +121,30 @@ class ParseCSVDirective(BaseDirective):
         '''
         assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
         args.target = path.abspath(args.target)
+        target_parent = path.dirname(args.target)
         frontier = cls.get_frontier(args.sources)
-        parse_pool = None
-        results_pool = None
-        for idx, node in enumerate(frontier):
+        worker_pool = parallel.WorkerPool(\
+            parallel.JoinableQueue(-1), 
+            tasks.ParseCSVTask, 
+            worker_count=2, 
+            task_kwargs={'target': target_parent, 'sep': args.sep}\
+        )
+        worker_pool.start()
+        for nodeidx, node in enumerate(frontier):
             Logger.info('Parsing $MFT file %s'%node)
+            mft_file = open(node, 'rb')
+            try:
+                recordidx = 0
+                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                while mft_record != '':
+                    worker_pool.add_task(nodeidx, recordidx, args.info_type, mft_record)
+                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                    recordidx += 1
+            finally:
+                mft_file.close()
+            Logger.info('Added %d records to processing queue from file %s'%node)
+        worker_pool.add_poison_pills()
+        worker_pool.join_task()
+        worker_pool.join_workers()
+        worker_pool.terminate()
+        #TODO: Coalesce results and logs
