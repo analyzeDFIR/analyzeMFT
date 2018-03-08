@@ -96,9 +96,9 @@ def initialize_parser():
     convert_subdirectives = convert_directives.add_subparsers()
 
     # JSON conversion directive
-    json_convert_directive = convert_subdirectives.add_parser('json', help='Convert from JSON output')
+    json_convert_directive = convert_subdirectives.add_parser('json', parents=[base_parent], help='Convert from JSON output')
 
     # DB conversion directive
-    db_convert_directive = convert_subdirectives.add_parser('db', help='Convert from database output')
+    db_convert_directive = convert_subdirectives.add_parser('db', parents=[base_parent, db_connect_parent], help='Convert from database output')
 
     return main_parser

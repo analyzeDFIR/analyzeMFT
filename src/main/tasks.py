@@ -200,7 +200,7 @@ class ParseJSONTask(object):
                 with open(target_file, 'a') as f:
                     for result in result_set:
                         try:
-                            f.write(result + ',\n')
+                            f.write(result + '\n')
                         except Exception as e:
                             Logger.error('Failed to write result to output file %s (%s)'%(target_file, str(e)))
         except Exception as e:
