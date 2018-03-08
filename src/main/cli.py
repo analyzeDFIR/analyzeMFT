@@ -95,12 +95,6 @@ def initialize_parser():
     convert_directives = main_directives.add_parser('convert', help='Parsed $MFT file output conversion directives')
     convert_subdirectives = convert_directives.add_subparsers()
 
-    # CSV conversion directive
-    csv_convert_directive = convert_subdirectives.add_parser('csv', help='Convert from CSV output')
-
-    # Body conversion directive
-    body_convert_directive = convert_subdirectives.add_parser('body', help='Convert from bodyfile output')
-    
     # JSON conversion directive
     json_convert_directive = convert_subdirectives.add_parser('json', help='Convert from JSON output')
 
