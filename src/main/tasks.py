@@ -6,6 +6,9 @@
 import logging
 Logger = logging.getLogger(__name__)
 from os import path
+from hashlib import md5
+from itertools import chain as itertools_chain
+from datetime import datetime, timezone, timedelta
 
 from src.parsers.mft import MFTEntry
 
@@ -90,8 +93,20 @@ class ParseBODYTask(object):
     '''
     '''
     NULL = ''
+    
+    @staticmethod
+    def to_timestamp(dt):
+        '''
+        Args:
+            dt: DateTime<UTC>   => datetime object to convert
+        Returns:
+            Datetime object converted to Unix epoch time
+        Preconditions:
+            dt is timezone-aware timestamp with timezone UTC
+        '''
+        return (dt - datetime(1970,1,1, tzinfo=timezone.utc)) / timedelta(seconds=1)
 
-    def __init__(self, nodeidx, recordidx, info_type, mft_record, target=None, sep=None):
+    def __init__(self, nodeidx, recordidx, mft_record, target=None, sep=None):
         self.nodeidx = nodeidx
         self.recordidx = recordidx
         self.mft_record = mft_record
@@ -102,17 +117,39 @@ class ParseBODYTask(object):
         target_file = self.target
         #target_file = path.join(self.target, '%s_amft_csv.tmp'%worker_name)
         result_set = list()
+        # FIELDS: MD5|name|inode|mode_as_string|UID|GID|size|atime|mtime|ctime|crtime
         try:
             mft_entry.parse()
         except Exception as e:
             Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         else:
-            result = list()
-            result_set.append(result)
+            if len(mft_entry.Attributes.STANDARD_INFORMATION) > 0 or len(mft_entry.Attributes.FILE_NAME) > 0:
+                file_name = str(mft_entry.Attributes.FILE_NAME[0].Data.FileName if len(mft_entry.Attributes.FILE_NAME) > 0 else self.NULL)
+                file_size = str(mft_entry.Attributes.FILE_NAME[0].Data.FileSize if len(mft_entry.Attributes.FILE_NAME) > 0 else self.NULL)
+                md5hash = md5(self.mft_record).hexdigest()
+                for attribute in itertools_chain(mft_entry.Attributes.STANDARD_INFORMATION, mft_entry.Attributes.FILE_NAME):
+                    result = list()
+                    result.append(str(self.nodeidx))
+                    result.append(str(self.recordidx))
+                    result.append(md5hash)
+                    result.append(file_name)
+                    result.append(self.NULL)
+                    result.append(self.NULL)
+                    result.append(self.NULL)
+                    result.append(self.NULL)
+                    result.append(str(file_size))
+                    result.append(str(self.to_timestamp(attribute.Data.LastAccessTime)))
+                    result.append(str(self.to_timestamp(attribute.Data.LastModifiedTime)))
+                    result.append(str(self.to_timestamp(attribute.Data.EntryModifiedTime)))
+                    result.append(str(self.to_timestamp(attribute.Data.CreateTime)))
+                    result_set.append(result)
         try:
             if len(result_set) > 0:
                 with open(target_file, 'a') as f:
                     for result in result_set:
-                        f.write(self.sep.join(result) + '\n')
+                        try:
+                            f.write(self.sep.join(result) + '\n')
+                        except Exception as e:
+                            Logger.error('Failed to write result to output file %s (%s)'%(target_file, str(e)))
         except Exception as e:
             Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))

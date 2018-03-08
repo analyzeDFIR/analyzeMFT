@@ -81,6 +81,7 @@ def initialize_parser():
     
     # Bodyfile parse directive
     body_parse_directive = parse_subdirectives.add_parser('body', parents=[base_parent, body_output_parent], help='Parse $MFT MAC times to bodyfile')
+    body_parse_directive.set_defaults(func=DirectiveRegistry.retrieve('ParseBODYDirective'))
 
     # JSON parse directive
     json_parse_directive = parse_subdirectives.add_parser('json', parents=[base_parent, base_output_parent], help='Parse $MFT file to JSON')
