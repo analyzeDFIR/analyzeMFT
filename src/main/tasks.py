@@ -9,6 +9,8 @@ from os import path
 from hashlib import md5
 from itertools import chain as itertools_chain
 from datetime import datetime, timezone, timedelta
+from json import dumps
+from construct import Container
 
 from src.parsers.mft import MFTEntry
 
@@ -149,6 +151,56 @@ class ParseBODYTask(object):
                     for result in result_set:
                         try:
                             f.write(self.sep.join(result) + '\n')
+                        except Exception as e:
+                            Logger.error('Failed to write result to output file %s (%s)'%(target_file, str(e)))
+        except Exception as e:
+            Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))
+
+class ParseJSONTask(object):
+    '''
+    '''
+    NULL = ''
+    
+    def __init__(self, nodeidx, recordidx, mft_record, target=None, pretty=None):
+        self.nodeidx = nodeidx
+        self.recordidx = recordidx
+        self.mft_record = mft_record
+        self.target = target
+        self.pretty = pretty
+    def __call__(self, worker_name):
+        mft_entry = MFTEntry(self.mft_record)
+        target_file = self.target
+        #target_file = path.join(self.target, '%s_amft_csv.tmp'%worker_name)
+        result_set = list()
+        try:
+            mft_entry.parse()
+            ## This is lazy - figure out why FieldBountDict is not serializable
+            ## It appears that FieldBoundDict needs to implement __dict__
+            for attribute in itertools_chain(mft_entry.Attributes.STANDARD_INFORMATION, mft_entry.Attributes.FILE_NAME):
+                attribute.Data.LastAccessTime = attribute.Data.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
+                attribute.Data.LastModifiedTime = attribute.Data.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
+                attribute.Data.EntryModifiedTime = attribute.Data.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
+                attribute.Data.CreateTime = attribute.Data.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
+            for attribute_list in mft_entry.Attributes.ATTRIBUTE_LIST:
+                attribute_list = Container(**attribute_list)
+            for attribute_type in mft_entry.Attributes.iterkeys:
+                if len(mft_entry.Attributes[attribute_type]) == 0:
+                    mft_entry.Attributes[attribute_type] = None
+            serializable_entry = Container(**mft_entry)
+            serializable_entry.Attributes = Container(**serializable_entry.Attributes)
+            serializable_entry.nodeidx = self.nodeidx
+            serializable_entry.recordidx = self.recordidx
+            result = dumps(serializable_entry, sort_keys=True, indent=(2 if self.pretty else None))
+        except Exception as e:
+            Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+        else:
+            result_set.append(result)
+        try:
+            if len(result_set) > 0:
+                with open(target_file, 'a') as f:
+                    for result in result_set:
+                        try:
+                            f.write(result + ',\n')
                         except Exception as e:
                             Logger.error('Failed to write result to output file %s (%s)'%(target_file, str(e)))
         except Exception as e:

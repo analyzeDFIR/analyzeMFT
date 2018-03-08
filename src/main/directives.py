@@ -165,7 +165,6 @@ class ParseBODYDirective(BaseDirective):
             args.sources: List<String>  => list of $MFT file(s) to parse
             args.target: String         => path to output file
             args.sep: String            => separator to use in output file
-            args.pretty                 => whether to pretty print JSON output
         Procedure:
             Parse $MFT information to BODY format
         Preconditions:
@@ -174,7 +173,6 @@ class ParseBODYDirective(BaseDirective):
             args.target is of type String           (assumed True)
             args.target points to existing directory
             args.sep is of type String              (assumed True)
-            args.pretty is of type Boolean          (assumed True)
         '''
         assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
         args.target = path.abspath(args.target)
@@ -188,6 +186,47 @@ class ParseBODYDirective(BaseDirective):
                 mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                 while mft_record != '' and (args.count is None or record_count < args.count):
                     tasks.ParseBODYTask(nodeidx, recordidx, mft_record, target=args.target, sep=args.sep)('')
+                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                    recordidx += 1
+                    record_count += 1
+            finally:
+                mft_file.close()
+            if args.count is not None and record_count >= args.count:
+                break
+
+class ParseJSONDirective(BaseDirective):
+    '''
+    Directive for parsing $MFT file to JSON format
+    '''
+    @classmethod
+    def run(cls, args):
+        '''
+        Args:
+            @BaseDirective.run_directive
+            args.sources: List<String>  => list of $MFT file(s) to parse
+            args.target: String         => path to output file
+            args.pretty                 => whether to pretty print JSON output
+        Procedure:
+            Parse $MFT information to JSON format
+        Preconditions:
+            @BaseDirective.run_directive
+            args.sources is of type List<String>    (assumed True)
+            args.target is of type String           (assumed True)
+            args.target points to existing directory
+            args.pretty is of type Boolean          (assumed True)
+        '''
+        assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
+        args.target = path.abspath(args.target)
+        frontier = cls.get_frontier(args.sources)
+        record_count = 0
+        for nodeidx, node in enumerate(frontier):
+            Logger.info('Parsing $MFT file %s'%node)
+            mft_file = open(node, 'rb')
+            try:
+                recordidx = 0
+                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                while mft_record != '' and (args.count is None or record_count < args.count):
+                    tasks.ParseJSONTask(nodeidx, recordidx, mft_record, target=args.target, pretty=args.pretty)('')
                     mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                     recordidx += 1
                     record_count += 1

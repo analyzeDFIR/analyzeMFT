@@ -86,6 +86,7 @@ def initialize_parser():
     # JSON parse directive
     json_parse_directive = parse_subdirectives.add_parser('json', parents=[base_parent, base_output_parent], help='Parse $MFT file to JSON')
     json_parse_directive.add_argument('-p', '--pretty', action='store_true', help='Whether to pretty-print the JSON output', dest='pretty')
+    json_parse_directive.set_defaults(func=DirectiveRegistry.retrieve('ParseJSONDirective'))
 
     # Database parse directive
     db_parse_directive = parse_subdirectives.add_parser('db', parents=[base_parent, db_connect_parent], help='Parse $MFT file to database')
