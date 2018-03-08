@@ -8,6 +8,7 @@ from os import path
 from argparse import ArgumentParser
 
 from src.main.directives import DirectiveRegistry
+from src.utils.parallel import CPU_COUNT
 
 def DBConnectConfig(arg):
     '''
@@ -39,6 +40,8 @@ def initialize_parser():
     base_parent.add_argument('--lpath', type=str, default=path.abspath(path.dirname(sys.argv[0])), help='Path to log file directory (i.e. /path/to/logs or C:\\Users\\<user>\\Documents\\)', dest='log_path')
     base_parent.add_argument('--lpref', type=str, default=None, help='Prefix for log file (default: amft_<date>)', dest='log_prefix')
     base_parent.add_argument('-s', '--source', action='append', help='Path to input file(s)', dest='sources')
+    base_parent.add_argument('-c', '--count', default=None, type=int, help='Number of records to process', dest='count')
+    base_parent.add_argument('--threads', default=(2 if CPU_COUNT <= 4 else 4), type=int, help='Number of threads to use', dest='threads')
 
     ## Base output parent
     base_output_parent = ArgumentParser(add_help=False)
@@ -56,7 +59,7 @@ def initialize_parser():
     db_connect_parent = ArgumentParser(add_help=False)
     db_connect_parent.add_argument('-d', '--driver', type=str, default='sqlite', help='Database driver to use (default: sqlite)', dest='db_driver')
     db_connect_parent.add_argument('-n', '--db', type=str, required=True, help='Name of database to connect to', dest='db_name')
-    db_connect_parent.add_argument('-c', '--connect', type=DBConnectConfig, help='Database connection string, or filepath to file containing connection string', dest='db_conn_string')
+    db_connect_parent.add_argument('-C', '--connect', type=DBConnectConfig, help='Database connection string, or filepath to file containing connection string', dest='db_conn_string')
     db_connect_parent.add_argument('-u', '--user', type=str, help='Name of database user (alternative to connection string)', dest='db_user')
     db_connect_parent.add_argument('-p', '--passwd', type=str, help='Database user password (alternative to connection string)', dest='db_passwd')
     db_connect_parent.add_argument('-H', '--host', type=str, default='localhost', help='Hostname or IP address of database (alternative to connection string)', dest='db_host')
@@ -74,6 +77,7 @@ def initialize_parser():
         default='summary', \
         choices=['summary'], \
         help='Type of information to output')
+    csv_parse_directive.set_defaults(func=DirectiveRegistry.retrieve('ParseCSVDirective'))
     
     # Bodyfile parse directive
     body_parse_directive = parse_subdirectives.add_parser('body', parents=[base_parent, body_output_parent], help='Parse $MFT MAC times to bodyfile')

@@ -7,8 +7,43 @@ import logging
 Logger = logging.getLogger(__name__)
 from uuid import uuid4
 from multiprocessing import Process, JoinableQueue, cpu_count
+from glob import glob
+from heapq import merge as heapq_merge
 
 from src.utils.config import initialize_logger
+
+CPU_COUNT = cpu_count()
+
+def coalesce_files(glob_pattern, target, transform=lambda line: line):
+    '''
+    Args:
+        glob_pattern: String                    => glob pattern of files to merge
+        target: String                          => file path to merge files into
+        transform: Callable<String> -> String   => transform to perform on each line
+    Procedure:
+        Gather all files that match glob_pattern and merge them into target
+        **NOTE: assumes each file is sorted and can be naturally sorted by columns
+    Preconditions:
+        glob_pattern is of type String
+        target is of type String
+        transform is of type Callable<String> -> String
+    '''
+    assert isinstance(glob_pattern, str), 'Glob_pattern is not of type String'
+    assert isinstance(target, str), 'Target is not of type String'
+    assert callable(transform), 'Transform is not of type Callable<String> -> String'
+    handle_list = [open(filepath, 'r') for filepath in glob(glob_pattern)]
+    if len(handle_list) == 0:
+        return
+    merged_records = heapq_merge(((transform(line) for line in handle) for handle in handle_list))
+    try:
+        with open(target, 'a') as target_file:
+            for record in merged_records:
+                target_file.write(record + '\n')
+    except Exception as e:
+        raise Exception('Failed to merge files at path %s into target file %s (%s)'%(glob_pattern, target, str(e)))
+    finally:
+        for handle in handle_list:
+            handle.close()
 
 class QueueWorker(Process):
     '''
@@ -19,9 +54,6 @@ class QueueWorker(Process):
         self._queue = queue
     def __repr__(self):
         return 'QueueWorker(%s, name=%s)'%(type(self._queue).__name__ + '()', self.name)
-            #' *' + str(self._args) + ', ' if len(self._args) > 0 else '',\
-            #self.name,\
-            #', **' + str(self._kwargs) if len(self._kwargs) > 0 else '')
     def run(self):
         '''
         Args:
@@ -46,27 +78,29 @@ class LoggedQueueWorker(QueueWorker):
     '''
     @QueueWorker
     '''
-    def __init__(self, queue, log_path, *args, name=lambda: str(uuid4()), **kwargs):
-        super(LoggedQueueWorker, self).__init__(queue, *args, name, **kwargs)
+    def __init__(self, queue, log_path=None, name=lambda: str(uuid4())):
+        super(LoggedQueueWorker, self).__init__(queue, name)
         self._log_path = log_path
     def run(self):
         '''
         @QueueWorker.run
         '''
-        initialize_logger(self._log_path, self.name + '_tmp_pmft')
-        Logger.info('Started worker: ' + self.name)
-        super(LoggedQueueWorker, self).run()
-        Logger.info('Ended worker: ' + self.name)
+        if self._log_path is not None:
+            initialize_logger(self._log_path, self.name + '_tmp_amft')
+            Logger.info('Started worker: ' + self.name)
+            super(LoggedQueueWorker, self).run()
+            Logger.info('Ended worker: ' + self.name)
 
 class WorkerPool(object):
     '''
     Class to manage pool of QueueWorker instances
     '''
-    def __init__(self, task_queue, task_class, daemonize=True, worker_class=LoggedQueueWorker, worker_count=(2 if cpu_count() <= 4 else 4), task_kwargs=dict()):
+    def __init__(self, task_queue, task_class, daemonize=True, worker_class=LoggedQueueWorker, worker_count=(2 if cpu_count() <= 4 else 4), worker_kwargs=dict(), task_kwargs=dict()):
         self._queue = task_queue
         self._task_class = task_class
         self._worker_class = worker_class
         self._task_kwargs = task_kwargs
+        self._worker_kwargs = worker_kwargs
         self._workers = None
         self.daemon = daemonize
         self.worker_count = worker_count
@@ -87,14 +121,10 @@ class WorkerPool(object):
         Preconditions:
             N/A
         '''
-        action = 'put_nowait' if hasattr(self._queue, 'put_nowait') else 'put'
+        action = 'put'
         task_args = dict(kwargs)
-        task_args.update(self._task_args)
-        try:
-            getattr(self._queue, action)(self._task_class(*args, **task_args))
-        except Exception as e:
-            #TODO create custom exception
-            raise Exception('Failed to add task to queue (%s)'%str(e))
+        task_args.update(self._task_kwargs)
+        getattr(self._queue, action)(self._task_class(*args, **task_args))
     def add_poison_pills(self):
         '''
         Args:
@@ -117,7 +147,7 @@ class WorkerPool(object):
         '''
         if self._workers is None:
             self._workers = [\
-                self._worker_class(self._queue, *self._task_args, **self._task_kwargs)\
+                self._worker_class(self._queue, **self._worker_kwargs)\
                 for i in range(self.worker_count)\
             ]
         for worker in self._workers:

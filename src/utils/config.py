@@ -38,21 +38,26 @@ def initialize_paths():
         except Exception as e:
             raise PathInitializationException(e)
 
-def initialize_logger(log_path, log_prefix=None, format=LOGGING_DEFAULTS.get('format'), datefmt=LOGGING_DEFAULTS.get('datefmt'), level=LOGGING_DEFAULTS.get('level')):
+def synthesize_log_path(log_path, log_prefix=None):
     '''
-    Args:
-        log_path: String    => valid path to output log to
-        log_prefix: String  => prefix of log file (default: pmft_<datetime>)
-    Procedure:
-        Initialize root logger with formatter, level, and handler set to 
-        FileHandler at path (log_path + log_prefix.log)
-    Preconditions:
-        log_path is of type String
-        log_prefix is of type String
     '''
     assert isinstance(log_path, str) and path.exists(log_path), 'Log_path is not a valid path'
     assert isinstance(log_prefix, (type(None), str)), 'Log_prefix is not of type String'
     if log_prefix is None:
         log_prefix = 'amft_' + datetime.utcnow().strftime('%Y%m%d')
-    full_log_path = path.join(path.abspath(log_path), log_prefix + '.log')
+    return path.join(path.abspath(log_path), log_prefix + '.log')
+
+def initialize_logger(log_path, log_prefix='main_tmp_amft', format=LOGGING_DEFAULTS.get('format'), datefmt=LOGGING_DEFAULTS.get('datefmt'), level=LOGGING_DEFAULTS.get('level')):
+    '''
+    Args:
+        log_path: String    => valid path to output log to
+        log_prefix: String  => prefix to log file
+    Procedure:
+        Initialize root logger with formatter, level, and handler set to 
+        FileHandler at path (log_path + log_prefix.log)
+    Preconditions:
+        log_path is of type String
+        log_prefix is of type Sring
+    '''
+    full_log_path = synthesize_log_path(log_path, log_prefix)
     logging.basicConfig(filename=full_log_path, format=format, datefmt=datefmt, level=level)

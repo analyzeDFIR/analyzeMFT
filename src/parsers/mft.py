@@ -31,14 +31,14 @@ class MFTEntry(BaseItem):
     '''
     Class for parsing Windows $MFT file entries
     '''
-    header      = Field(1)
-    attributes  = Field(2)
+    Header      = Field(1)
+    Attributes  = Field(2)
 
     def __init__(self, raw_entry, *args, load=False, **kwargs):
         super(MFTEntry, self).__init__(*args, **kwargs)
-        self.attributes = MFTAttributes()
-        for key in self.attributes.iterkeys:
-            self.attributes[key] = list()
+        self.Attributes = MFTAttributes()
+        for key in self.Attributes.iterkeys:
+            self.Attributes[key] = list()
         self._stream = None
         self.raw_entry = raw_entry
         if load:
@@ -102,7 +102,7 @@ class MFTEntry(BaseItem):
         '''
         '''
         #TODO: check if ValueLength * 2 or just ValueLength
-        return stream.read(attribute_header.get('Form').get('ValueLength')).decode('UTF16')
+        return stream.read(attribute_header.Form.ValueLength).decode('UTF16')
     def _parse_access_control_list(self, stream=None):
         '''
         '''
@@ -229,7 +229,7 @@ class MFTEntry(BaseItem):
         if stream is None:
             stream = self._stream
         if header is None:
-            header = self.header
+            header = self.Header
         original_position = self.tell(stream=stream)
         type_code = mftstructs.MFTAttributeTypeCode.parse_stream(stream)
         if type_code == 'END_OF_ATTRIBUTES' or \
@@ -241,12 +241,12 @@ class MFTEntry(BaseItem):
         try:
             if next_attribute.Header.FormCode != 0:
                 return next_attribute.Header.TypeCode, None
-            next_attribute.Data = self.parse_attribute(attribute_header, original_position, stream=stream)
+            next_attribute.Data = self.parse_attribute(next_attribute.Header, original_position, stream=stream)
             return next_attribute.Header.TypeCode, self._clean_transform(next_attribute)
         except:
             return next_attribute.Header.TypeCode, None
         finally:
-            stream.seek(original_position + attribute_header.get('RecordLength'))
+            stream.seek(original_position + next_attribute.Header.RecordLength)
     def parse_header(self, stream=None):
         '''
         '''
@@ -272,14 +272,16 @@ class MFTEntry(BaseItem):
         '''
         try:
             self.get_stream(True)
-            self.header = self.parse_header()
-            self._stream.seek(self.header.get('FirstAttributeOffset'))
-            while self.tell() < self.header.get('UsedSize'):
+            self.Header = self.parse_header()
+            self._stream.seek(self.Header.FirstAttributeOffset)
+            while self.tell() < self.Header.UsedSize:
                 attribute_type, attribute_data = self.parse_next_attribute(attr_filter=attr_filter)
                 if attribute_type is None:
                     break
+                elif attribute_type not in self.Attributes:
+                    continue
                 elif attribute_data is not None:
-                    self.attributes[attribute_type].append(attribute_data)
+                    self.Attributes[attribute_type].append(attribute_data)
         finally:
             if self._stream is not None:
                 self._stream.close()

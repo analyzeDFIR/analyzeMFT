@@ -9,7 +9,7 @@ from os import path
 from glob import glob
 from argparse import Namespace
 
-from src.utils.config import initialize_logger
+from src.utils.config import initialize_logger, synthesize_log_path
 from src.utils.registry import RegistryMetaclassMixin 
 import src.utils.parallel as parallel
 import src.main.tasks as tasks
@@ -76,23 +76,36 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
         '''
         Args:
             args: Namespace => parsed command line arguments
-                args.log_path: String   => path to directory file directory
+                args.log_path: String   => path to log file directory
                 args.log_prefix: String => log file prefix
+                args.count: Integer     => number of records to process
+                args.threads: Integer   => number of threads to use
         Procedure:
             Initialize the logging system and run this directive using the supplied arguments
         Preconditions:
             args is of type Namespace
             args.log_path is of type String
             args.log_prefix is of type String
+            args.count is of type Integer
+            args.threads is of type Integer > 0
             ** Any other preconditions must be checked by subclasses
         '''
         assert isinstance(args, Namespace), 'Args is not of type Namespace'
         assert hasattr(args, 'log_path'), 'Args does not contain log_path attribute'
         assert hasattr(args, 'log_prefix'), 'Args does not contain log_prefix attribute'
+        assert hasattr(args, 'count'), 'Args does not contain count attribute'
+        assert hasattr(args, 'threads'), 'Args does not contain threads attribute'
+        assert args.threads > 0, 'Threads is not greater than 0'
+        if args.threads > parallel.CPU_COUNT:
+            args.threads = parallel.CPU_COUNT
         initialize_logger(args.log_path, args.log_prefix)
         Logger.info('BEGIN: %s'%cls.__name__)
         cls.run(args)
         Logger.info('END: %s'%cls.__name__)
+        #logging.shutdown()
+        #log_path = synthesize_log_path(args.log_path, args.log_prefix)
+        #parallel.coalesce_files(path.join(args.lpath, '*_tmp_amft.log'), log_path)
+
     def __init__(self, args):
         self.run_directive(args)
 
@@ -123,28 +136,62 @@ class ParseCSVDirective(BaseDirective):
         args.target = path.abspath(args.target)
         target_parent = path.dirname(args.target)
         frontier = cls.get_frontier(args.sources)
-        worker_pool = parallel.WorkerPool(\
-            parallel.JoinableQueue(-1), 
-            tasks.ParseCSVTask, 
-            worker_count=2, 
-            task_kwargs={'target': target_parent, 'sep': args.sep}\
-        )
-        worker_pool.start()
+        record_count = 0
         for nodeidx, node in enumerate(frontier):
             Logger.info('Parsing $MFT file %s'%node)
             mft_file = open(node, 'rb')
             try:
                 recordidx = 0
                 mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                while mft_record != '':
-                    worker_pool.add_task(nodeidx, recordidx, args.info_type, mft_record)
+                while mft_record != '' and (args.count is None or record_count < args.count):
+                    tasks.ParseCSVTask(nodeidx, recordidx, args.info_type, mft_record, target=args.target, sep=args.sep)('')
                     mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                     recordidx += 1
+                    record_count += 1
             finally:
                 mft_file.close()
-            Logger.info('Added %d records to processing queue from file %s'%node)
-        worker_pool.add_poison_pills()
-        worker_pool.join_task()
-        worker_pool.join_workers()
-        worker_pool.terminate()
-        #TODO: Coalesce results and logs
+            if args.count is not None and record_count >= args.count:
+                break
+
+class ParseBODYDirective(BaseDirective):
+    '''
+    Directive for parsing $MFT file to BODY format
+    '''
+    @classmethod
+    def run(cls, args):
+        '''
+        Args:
+            @BaseDirective.run_directive
+            args.sources: List<String>  => list of $MFT file(s) to parse
+            args.target: String         => path to output file
+            args.sep: String            => separator to use in output file
+            args.pretty                 => whether to pretty print JSON output
+        Procedure:
+            Parse $MFT information to BODY format
+        Preconditions:
+            @BaseDirective.run_directive
+            args.sources is of type List<String>    (assumed True)
+            args.target is of type String           (assumed True)
+            args.target points to existing directory
+            args.sep is of type String              (assumed True)
+            args.pretty is of type Boolean          (assumed True)
+        '''
+        assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
+        args.target = path.abspath(args.target)
+        frontier = cls.get_frontier(args.sources)
+        record_count = 0
+        for nodeidx, node in enumerate(frontier):
+            Logger.info('Parsing $MFT file %s'%node)
+            mft_file = open(node, 'rb')
+            try:
+                recordidx = 0
+                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                while mft_record != '' and (args.count is None or record_count < args.count):
+                    tasks.ParseBODYTask(nodeidx, recordidx, mft_record, target=args.target, sep=args.sep)('')
+                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                    recordidx += 1
+                    record_count += 1
+            finally:
+                mft_file.close()
+            if args.count is not None and record_count >= args.count:
+                break
