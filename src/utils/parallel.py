@@ -43,7 +43,7 @@ def coalesce_files(glob_pattern, target, transform=lambda line: line, clean=True
         try:
             with open(target, 'a') as target_file:
                 for record in merged_records:
-                    target_file.write(record + '\n')
+                    target_file.write(record)
         finally:
             for handle in handle_list:
                 handle.close()

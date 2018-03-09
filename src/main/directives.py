@@ -8,6 +8,7 @@ Logger = logging.getLogger(__name__)
 from os import path
 from glob import glob
 from argparse import Namespace
+from time import sleep
 
 from src.utils.config import initialize_logger, synthesize_log_path
 from src.utils.registry import RegistryMetaclassMixin 
@@ -26,7 +27,7 @@ class DirectiveRegistry(RegistryMetaclassMixin, type):
         '''
         @RegistryMetaclassMixin._add_class
         '''
-        if cls.retrieve(name) is not None or name == 'BaseDirective':
+        if cls.retrieve(name) is not None or name.startswith('Base'):
             return False
         if not hasattr(new_cls, 'run_directive') or not callable(new_cls.run_directive):
             return False
@@ -102,6 +103,7 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
         initialize_logger(args.log_path)
         Logger.info('BEGIN: %s'%cls.__name__)
         cls.run(args)
+        sleep(1)
         Logger.info('END: %s'%cls.__name__)
         logging.shutdown()
         log_path = synthesize_log_path(args.log_path, args.log_prefix)
@@ -110,10 +112,84 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
     def __init__(self, args):
         self.run_directive(args)
 
-class ParseCSVDirective(BaseDirective):
+class BaseParseFileOutputDirective(BaseDirective):
+    '''
+    Base class for directives that output results to a file
+    '''
+    _TASK_CLASS = None
+
+    @classmethod
+    def _get_task_kwargs(cls, args, target_parent):
+        '''
+        '''
+        raise NotImplementedError('_get_worker_kwargs not implemented for %s'%cls.__name__)
+    @classmethod
+    def _get_worker_kwargs(cls, args):
+        '''
+        '''
+        raise NotImplementedError('_get_worker_kwargs not implemented for %s'%cls.__name__)
+    @classmethod
+    def run(cls, args):
+        '''
+        @BaseDirective.run
+        '''
+        assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
+        args.target = path.abspath(args.target)
+        target_parent = path.dirname(args.target)
+        frontier = cls.get_frontier(args.sources)
+        frontier_count = next(frontier)
+        if frontier_count > 0 and args.count > 0 and cls._TASK_CLASS is not None:
+            worker_pool = parallel.WorkerPool(\
+                parallel.JoinableQueue(-1), 
+                cls._TASK_CLASS, 
+                daemonize=False, 
+                worker_count=args.threads,
+                worker_kwargs=cls._get_worker_kwargs(args),
+                task_kwargs=cls._get_task_kwargs(args, target_parent)\
+            )
+            worker_pool.start()
+            record_count = 0
+            for nodeidx, node in enumerate(frontier):
+                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                mft_file = open(node, 'rb')
+                try:
+                    recordidx = 0
+                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                    while mft_record != '' and record_count < args.count:
+                        worker_pool.add_task(nodeidx, recordidx, mft_record)
+                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                        recordidx += 1
+                        record_count += 1
+                finally:
+                    mft_file.close()
+                worker_pool.join_tasks()
+                if record_count >= args.count:
+                    break
+            worker_pool.add_poison_pills()
+            worker_pool.join_workers()
+            worker_pool.terminate()
+            parallel.coalesce_files(path.join(target_parent, '*_tmp_amft.out'), args.target)
+
+
+class ParseCSVDirective(BaseParseFileOutputDirective):
     '''
     Directive for parsing $MFT file to CSV format
     '''
+    _TASK_CLASS = tasks.ParseCSVTask
+
+
+    @classmethod
+    def _get_task_kwargs(cls, args, target_parent):
+        '''
+        @BaseParseFileOutputDirective._get_task_kwargs
+        '''
+        return dict(info_type=args.info_type, target=target_parent, sep=args.sep)
+    @classmethod
+    def _get_worker_kwargs(cls, args):
+        '''
+        @BaseParseFileOutputDirective._get_worker_kwargs
+        '''
+        return dict(log_path=args.log_path)
     @classmethod
     def run(cls, args):
         '''
@@ -133,47 +209,27 @@ class ParseCSVDirective(BaseDirective):
             args.target points to existing directory
             args.sep is of type String              (assumed True)
         '''
-        assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
-        args.target = path.abspath(args.target)
-        target_parent = path.dirname(args.target)
-        frontier = cls.get_frontier(args.sources)
-        frontier_count = next(frontier)
-        if frontier_count > 0 and args.count > 0:
-            worker_pool = parallel.WorkerPool(\
-                parallel.JoinableQueue(-1), 
-                tasks.ParseCSVTask, 
-                daemonize=False, 
-                worker_count=args.threads,
-                worker_kwargs=dict(log_path=args.log_path),
-                task_kwargs=dict(target=target_parent, sep=args.sep)\
-            )
-            worker_pool.start()
-            record_count = 0
-            for nodeidx, node in enumerate(frontier):
-                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
-                mft_file = open(node, 'rb')
-                try:
-                    recordidx = 0
-                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                    while mft_record != '' and record_count < args.count:
-                        worker_pool.add_task(nodeidx, recordidx, args.info_type, mft_record)
-                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                        recordidx += 1
-                        record_count += 1
-                finally:
-                    mft_file.close()
-                worker_pool.join_tasks()
-                if record_count >= args.count:
-                    break
-            worker_pool.add_poison_pills()
-            worker_pool.join_workers()
-            worker_pool.terminate()
-            parallel.coalesce_files(path.join(target_parent, '*_tmp_amft.out'), args.target)
+        super(ParseCSVDirective, cls).run(args)
 
-class ParseBODYDirective(BaseDirective):
+class ParseBODYDirective(BaseParseFileOutputDirective):
     '''
     Directive for parsing $MFT file to BODY format
     '''
+    _TASK_CLASS = tasks.ParseBODYTask
+
+
+    @classmethod
+    def _get_task_kwargs(cls, args, target_parent):
+        '''
+        @BaseParseFileOutputDirective._get_task_kwargs
+        '''
+        return dict(target=target_parent, sep=args.sep)
+    @classmethod
+    def _get_worker_kwargs(cls, args):
+        '''
+        @BaseParseFileOutputDirective._get_worker_kwargs
+        '''
+        return dict(log_path=args.log_path)
     @classmethod
     def run(cls, args):
         '''
@@ -191,32 +247,26 @@ class ParseBODYDirective(BaseDirective):
             args.target points to existing directory
             args.sep is of type String              (assumed True)
         '''
-        assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
-        args.target = path.abspath(args.target)
-        frontier = cls.get_frontier(args.sources)
-        frontier_count = next(frontier)
-        if frontier_count > 0 and args.count > 0:
-            record_count = 0
-            for nodeidx, node in enumerate(frontier):
-                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
-                mft_file = open(node, 'rb')
-                try:
-                    recordidx = 0
-                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                    while mft_record != '' and record_count < args.count:
-                        tasks.ParseBODYTask(nodeidx, recordidx, mft_record, target=args.target, sep=args.sep)('')
-                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                        recordidx += 1
-                        record_count += 1
-                finally:
-                    mft_file.close()
-                if record_count >= args.count:
-                    break
+        super(ParseBODYDirective, cls).run(args)
 
-class ParseJSONDirective(BaseDirective):
+class ParseJSONDirective(BaseParseFileOutputDirective):
     '''
     Directive for parsing $MFT file to JSON format
     '''
+    _TASK_CLASS = tasks.ParseJSONTask
+
+    @classmethod
+    def _get_task_kwargs(cls, args, target_parent):
+        '''
+        @BaseParseFileOutputDirective._get_task_kwargs
+        '''
+        return dict(target=target_parent, pretty=args.pretty if args.threads == 1 else False)
+    @classmethod
+    def _get_worker_kwargs(cls, args):
+        '''
+        @BaseParseFileOutputDirective._get_worker_kwargs
+        '''
+        return dict(log_path=args.log_path)
     @classmethod
     def run(cls, args):
         '''
@@ -234,24 +284,4 @@ class ParseJSONDirective(BaseDirective):
             args.target points to existing directory
             args.pretty is of type Boolean          (assumed True)
         '''
-        assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
-        args.target = path.abspath(args.target)
-        frontier = cls.get_frontier(args.sources)
-        frontier_count = next(frontier)
-        if frontier_count > 0 and args.count > 0:
-            record_count = 0
-            for nodeidx, node in enumerate(frontier):
-                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
-                mft_file = open(node, 'rb')
-                try:
-                    recordidx = 0
-                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                    while mft_record != '' and record_count < args.count:
-                        tasks.ParseJSONTask(nodeidx, recordidx, mft_record, target=args.target, pretty=args.pretty)('')
-                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                        recordidx += 1
-                        record_count += 1
-                finally:
-                    mft_file.close()
-                if record_count >= args.count:
-                    break
+        super(ParseJSONDirective, cls).run(args)

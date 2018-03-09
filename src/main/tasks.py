@@ -14,21 +14,62 @@ from construct import Container
 
 from src.parsers.mft import MFTEntry
 
-class ParseCSVTask(object):
+class BaseParseTask(object):
+    '''
+    '''
+    NULL = None
+
+    def __init__(self, nodeidx, recordidx, mft_record, **kwargs):
+        self.nodeidx = nodeidx
+        self.recordidx = recordidx
+        self.mft_record = mft_record
+        for kwarg in kwargs:
+            setattr(self, kwarg, kwargs[kwarg])
+    def __call__(self, worker_name):
+        mft_entry = MFTEntry(self.mft_record)
+        result_set = self._get_resultset(mft_entry)
+        self._handle_resultset(result_set, worker_name)
+
+class BaseParseFileOutputTask(BaseParseTask):
     '''
     '''
     NULL = ''
 
-    def __init__(self, nodeidx, recordidx, info_type, mft_record, target=None, sep=None):
-        self.nodeidx = nodeidx
-        self.recordidx = recordidx
-        self.info_type = info_type
-        self.mft_record = mft_record
-        self.target = target
-        self.sep = sep
-    def __call__(self, worker_name):
-        mft_entry = MFTEntry(self.mft_record)
+    def _handle_resultset(self, result_set, worker_name):
+        '''
+        '''
         target_file = path.join(self.target, '%s_tmp_amft.out'%worker_name)
+        try:
+            if len(result_set) > 0:
+                with open(target_file, 'a') as f:
+                    for result in result_set:
+                        try:
+                            f.write(self.sep.join(result) + '\n')
+                        except Exception as e:
+                            Logger.error('Failed to write %s to output file %s (%s)'%(str(result), target_file, str(e)))
+        except Exception as e:
+            Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))
+
+class ParseCSVTask(BaseParseFileOutputTask):
+    '''
+    '''
+    @classmethod
+    def _get_longest_filename(cls, file_name_set, default=None):
+        '''
+        '''
+        if default is None:
+            default = cls.NULL
+        if len(file_name_set) == 0:
+            return default
+        file_name = None
+        for attribute in file_name_set:
+            if file_name is None or \
+                (hasattr(attribute.Data, 'FileName') and \
+                len(attribute.Data.FileName) > len(file_name)):
+                file_name = attribute.Data.FileName
+        return file_name if file_name is not None else default
+
+    def _get_resultset(self, mft_entry):
         result_set = list()
         if self.info_type == 'summary':
             # FIELDS: RecordNumber, Signature, SequenceNumber, LogFileSequenceNumber, BaseFileRecordSegmentNumber, BaseFileRecordSequenceNumber, 
@@ -58,7 +99,7 @@ class ParseCSVTask(object):
                 result.append(str(mft_entry.Header.TotalSize))
                 result.append(str(mft_entry.Header.ReferenceCount))
                 result.append(str(mft_entry.Header.FirstAttributeId))
-                result.append(str(mft_entry.Attributes.FILE_NAME[0].Data.FileName if len(mft_entry.Attributes.FILE_NAME) > 0 else self.NULL))
+                result.append(self._get_longest_filename(mft_entry.Attributes.FILE_NAME))
                 if len(mft_entry.Attributes.STANDARD_INFORMATION) > 0:
                     result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                     result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
@@ -82,22 +123,11 @@ class ParseCSVTask(object):
                 for key in mft_entry.Attributes.iterkeys:
                     result.append(str(len(mft_entry.Attributes[key])))
                 result_set.append(result)
-        try:
-            if len(result_set) > 0:
-                with open(target_file, 'a') as f:
-                    for result in result_set:
-                        try:
-                            Logger.info('Writing %s to output file %s'%(str(result), target_file))
-                            f.write(self.sep.join(result) + '\n')
-                        except Exception as e:
-                            Logger.error('Failed to write %s to output file %s (%s)'%(str(result), target_file, str(e)))
-        except Exception as e:
-            Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))
+        return result_set
 
-class ParseBODYTask(object):
+class ParseBODYTask(ParseCSVTask):
     '''
     '''
-    NULL = ''
     
     @staticmethod
     def to_timestamp(dt):
@@ -111,25 +141,16 @@ class ParseBODYTask(object):
         '''
         return (dt - datetime(1970,1,1, tzinfo=timezone.utc)) / timedelta(seconds=1)
 
-    def __init__(self, nodeidx, recordidx, mft_record, target=None, sep=None):
-        self.nodeidx = nodeidx
-        self.recordidx = recordidx
-        self.mft_record = mft_record
-        self.target = target
-        self.sep = sep
-    def __call__(self, worker_name):
-        mft_entry = MFTEntry(self.mft_record)
-        target_file = self.target
-        #target_file = path.join(self.target, '%s_amft_csv.tmp'%worker_name)
+    def _get_resultset(self, mft_entry):
         result_set = list()
-        # FIELDS: MD5|name|inode|mode_as_string|UID|GID|size|atime|mtime|ctime|crtime
+        # FIELDS: nodeidx|recordidx|MD5|name|inode|mode_as_string|UID|GID|size|atime|mtime|ctime|crtime
         try:
             mft_entry.parse()
         except Exception as e:
             Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         else:
             if len(mft_entry.Attributes.STANDARD_INFORMATION) > 0 or len(mft_entry.Attributes.FILE_NAME) > 0:
-                file_name = str(mft_entry.Attributes.FILE_NAME[0].Data.FileName if len(mft_entry.Attributes.FILE_NAME) > 0 else self.NULL)
+                file_name = self._get_longest_filename(mft_entry.Attributes.FILE_NAME)
                 file_size = str(mft_entry.Attributes.FILE_NAME[0].Data.FileSize if len(mft_entry.Attributes.FILE_NAME) > 0 else self.NULL)
                 md5hash = md5(self.mft_record).hexdigest()
                 for attribute in itertools_chain(mft_entry.Attributes.STANDARD_INFORMATION, mft_entry.Attributes.FILE_NAME):
@@ -141,39 +162,19 @@ class ParseBODYTask(object):
                     result.append(self.NULL)
                     result.append(self.NULL)
                     result.append(self.NULL)
-                    result.append(self.NULL)
+                    result.append('FN' if hasattr(attribute.Data, 'ParentDirectory') else 'SI')
                     result.append(str(file_size))
                     result.append(str(self.to_timestamp(attribute.Data.LastAccessTime)))
                     result.append(str(self.to_timestamp(attribute.Data.LastModifiedTime)))
                     result.append(str(self.to_timestamp(attribute.Data.EntryModifiedTime)))
                     result.append(str(self.to_timestamp(attribute.Data.CreateTime)))
                     result_set.append(result)
-        try:
-            if len(result_set) > 0:
-                with open(target_file, 'a') as f:
-                    for result in result_set:
-                        try:
-                            f.write(self.sep.join(result) + '\n')
-                        except Exception as e:
-                            Logger.error('Failed to write result to output file %s (%s)'%(target_file, str(e)))
-        except Exception as e:
-            Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))
+        return result_set
 
-class ParseJSONTask(object):
+class ParseJSONTask(BaseParseFileOutputTask):
     '''
     '''
-    NULL = ''
-    
-    def __init__(self, nodeidx, recordidx, mft_record, target=None, pretty=None):
-        self.nodeidx = nodeidx
-        self.recordidx = recordidx
-        self.mft_record = mft_record
-        self.target = target
-        self.pretty = pretty
-    def __call__(self, worker_name):
-        mft_entry = MFTEntry(self.mft_record)
-        target_file = self.target
-        #target_file = path.join(self.target, '%s_amft_csv.tmp'%worker_name)
+    def _get_resultset(self, mft_entry):
         result_set = list()
         try:
             mft_entry.parse()
@@ -198,13 +199,4 @@ class ParseJSONTask(object):
             Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         else:
             result_set.append(result)
-        try:
-            if len(result_set) > 0:
-                with open(target_file, 'a') as f:
-                    for result in result_set:
-                        try:
-                            f.write(result + '\n')
-                        except Exception as e:
-                            Logger.error('Failed to write result to output file %s (%s)'%(target_file, str(e)))
-        except Exception as e:
-            Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))
+        return result_set
