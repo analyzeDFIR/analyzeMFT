@@ -5,10 +5,12 @@
 
 import logging
 Logger = logging.getLogger(__name__)
-from os import path
+import sys
+from os import path, stat
 from glob import glob
 from argparse import Namespace
 from time import sleep
+from tqdm import tqdm
 
 from src.utils.config import initialize_logger, synthesize_log_path
 from src.utils.registry import RegistryMetaclassMixin 
@@ -45,7 +47,7 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
     MFT_RECORD_SIZE = 1024
 
     @staticmethod
-    def get_frontier(sources, gen=True):
+    def get_frontier(sources):
         '''
         '''
         frontier = list()
@@ -56,12 +58,7 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
             elif path.isdir(src):
                 for subsrc in glob(path.join(src, '*')):
                     frontier.append(subsrc)
-        if gen:
-            yield len(frontier)
-            for node in frontier:
-                yield node
-        else:
-            return frontier
+        return frontier
     @classmethod
     def run(cls, args):
         '''
@@ -119,6 +116,16 @@ class BaseParseFileOutputDirective(BaseDirective):
     _TASK_CLASS = None
 
     @classmethod
+    def _get_remaining_count(cls, filepath, record_count, max_records):
+        '''
+        '''
+        file_size = stat(filepath).st_size
+        if file_size < cls.MFT_RECORD_SIZE:
+            return None
+        file_records = file_size/cls.MFT_RECORD_SIZE
+        remaining_count = max_records - record_count
+        return file_records if file_records <= remaining_count else remaining_count
+    @classmethod
     def _get_task_kwargs(cls, args, target_parent):
         '''
         '''
@@ -137,7 +144,7 @@ class BaseParseFileOutputDirective(BaseDirective):
         args.target = path.abspath(args.target)
         target_parent = path.dirname(args.target)
         frontier = cls.get_frontier(args.sources)
-        frontier_count = next(frontier)
+        frontier_count = len(frontier)
         if frontier_count > 0 and args.count > 0 and cls._TASK_CLASS is not None:
             worker_pool = parallel.WorkerPool(\
                 parallel.JoinableQueue(-1), 
@@ -149,27 +156,34 @@ class BaseParseFileOutputDirective(BaseDirective):
             )
             worker_pool.start()
             record_count = 0
-            for nodeidx, node in enumerate(frontier):
-                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
-                mft_file = open(node, 'rb')
-                try:
-                    recordidx = 0
-                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                    while mft_record != '' and record_count < args.count:
-                        worker_pool.add_task(nodeidx, recordidx, mft_record)
-                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                        recordidx += 1
-                        record_count += 1
-                finally:
-                    mft_file.close()
-                worker_pool.join_tasks()
-                if record_count >= args.count:
-                    break
+            track_by_records = args.count == sys.maxsize
+            with tqdm(total=frontier_count if track_by_records else args.count, desc='Total', unit='files' if track_by_records else 'records') as node_progress:
+                for nodeidx, node in enumerate(frontier):
+                    Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                    mft_file = open(node, 'rb')
+                    try:
+                        recordidx = 0
+                        remaining_count = cls._get_remaining_count(node, record_count, args.count)
+                        if remaining_count > 0:
+                            with tqdm(total=remaining_count, desc='%d. %s'%(nodeidx, path.basename(node)), unit='records') as record_progress:
+                                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                                while mft_record != '' and remaining_count > 0:
+                                    worker_pool.add_task(nodeidx, recordidx, mft_record)
+                                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                                    recordidx += 1
+                                    remaining_count -= 1
+                                    record_progress.update(1)
+                    finally:
+                        record_count += (recordidx + 1)
+                        mft_file.close()
+                    worker_pool.join_tasks()
+                    node_progress.update(1 if args.count == sys.maxsize else recordidx)
+                    if record_count >= args.count:
+                        break
             worker_pool.add_poison_pills()
             worker_pool.join_workers()
             worker_pool.terminate()
             parallel.coalesce_files(path.join(target_parent, '*_tmp_amft.out'), args.target)
-
 
 class ParseCSVDirective(BaseParseFileOutputDirective):
     '''
