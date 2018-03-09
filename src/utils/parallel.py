@@ -5,6 +5,7 @@
 
 import logging
 Logger = logging.getLogger(__name__)
+from os import remove, rename
 from uuid import uuid4
 from multiprocessing import Process, JoinableQueue, cpu_count
 from glob import glob
@@ -14,7 +15,7 @@ from src.utils.config import initialize_logger
 
 CPU_COUNT = cpu_count()
 
-def coalesce_files(glob_pattern, target, transform=lambda line: line):
+def coalesce_files(glob_pattern, target, transform=lambda line: line, clean=True):
     '''
     Args:
         glob_pattern: String                    => glob pattern of files to merge
@@ -31,19 +32,24 @@ def coalesce_files(glob_pattern, target, transform=lambda line: line):
     assert isinstance(glob_pattern, str), 'Glob_pattern is not of type String'
     assert isinstance(target, str), 'Target is not of type String'
     assert callable(transform), 'Transform is not of type Callable<String> -> String'
-    handle_list = [open(filepath, 'r') for filepath in glob(glob_pattern)]
-    if len(handle_list) == 0:
+    file_list = glob(glob_pattern)
+    if len(file_list) == 0:
         return
-    merged_records = heapq_merge(((transform(line) for line in handle) for handle in handle_list))
-    try:
-        with open(target, 'a') as target_file:
-            for record in merged_records:
-                target_file.write(record + '\n')
-    except Exception as e:
-        raise Exception('Failed to merge files at path %s into target file %s (%s)'%(glob_pattern, target, str(e)))
-    finally:
-        for handle in handle_list:
-            handle.close()
+    elif len(file_list) == 1:
+        rename(file_list[0], target)
+    else:
+        handle_list = [open(filepath, 'r') for filepath in file_list]
+        merged_records = heapq_merge(*[(transform(line) for line in handle) for handle in handle_list])
+        try:
+            with open(target, 'a') as target_file:
+                for record in merged_records:
+                    target_file.write(record + '\n')
+        finally:
+            for handle in handle_list:
+                handle.close()
+            if clean:
+                for path in file_list:
+                    remove(path)
 
 class QueueWorker(Process):
     '''

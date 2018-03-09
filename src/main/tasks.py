@@ -28,8 +28,7 @@ class ParseCSVTask(object):
         self.sep = sep
     def __call__(self, worker_name):
         mft_entry = MFTEntry(self.mft_record)
-        #target_file = self.target
-        target_file = path.join(self.target, '%s_amft_csv.tmp'%worker_name)
+        target_file = path.join(self.target, '%s_tmp_amft.out'%worker_name)
         result_set = list()
         if self.info_type == 'summary':
             # FIELDS: RecordNumber, Signature, SequenceNumber, LogFileSequenceNumber, BaseFileRecordSegmentNumber, BaseFileRecordSequenceNumber, 

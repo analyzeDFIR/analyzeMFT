@@ -99,13 +99,13 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
         assert args.threads > 0, 'Threads is not greater than 0'
         if args.threads > parallel.CPU_COUNT:
             args.threads = parallel.CPU_COUNT
-        initialize_logger(args.log_path, args.log_prefix)
+        initialize_logger(args.log_path)
         Logger.info('BEGIN: %s'%cls.__name__)
         cls.run(args)
         Logger.info('END: %s'%cls.__name__)
-        #logging.shutdown()
-        #log_path = synthesize_log_path(args.log_path, args.log_prefix)
-        #parallel.coalesce_files(path.join(args.lpath, '*_tmp_amft.log'), log_path)
+        logging.shutdown()
+        log_path = synthesize_log_path(args.log_path, args.log_prefix)
+        parallel.coalesce_files(path.join(args.log_path, '*_tmp_amft.log'), log_path)
 
     def __init__(self, args):
         self.run_directive(args)
@@ -145,7 +145,7 @@ class ParseCSVDirective(BaseDirective):
                 daemonize=False, 
                 worker_count=args.threads,
                 worker_kwargs=dict(log_path=args.log_path),
-                task_kwargs=dict(target=args.target, sep=args.sep)\
+                task_kwargs=dict(target=target_parent, sep=args.sep)\
             )
             worker_pool.start()
             record_count = 0
@@ -156,23 +156,19 @@ class ParseCSVDirective(BaseDirective):
                     recordidx = 0
                     mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                     while mft_record != '' and record_count < args.count:
-                        worker_pool.add_task(nodeidx, recordidx, args.info_type, mft_record, target=args.target, sep=args.sep)
-                        #tasks.ParseCSVTask(nodeidx, recordidx, args.info_type, mft_record, target=args.target, sep=args.sep)('')
+                        worker_pool.add_task(nodeidx, recordidx, args.info_type, mft_record)
                         mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                         recordidx += 1
                         record_count += 1
                 finally:
                     mft_file.close()
-                print('::: Joining tasks')
                 worker_pool.join_tasks()
                 if record_count >= args.count:
                     break
-            print('::: Adding poison pills')
             worker_pool.add_poison_pills()
-            print('::: Joining workers')
             worker_pool.join_workers()
-            print('::: Terminating workers')
             worker_pool.terminate()
+            parallel.coalesce_files(path.join(target_parent, '*_tmp_amft.out'), args.target)
 
 class ParseBODYDirective(BaseDirective):
     '''
