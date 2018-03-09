@@ -8,6 +8,7 @@ from os import path
 from datetime import datetime
 import logging
 
+from src.utils.logging import addProcessScopedHandler, ProcessAwareFileHandler
 from src.main.exceptions import PathInitializationError
 
 LOGGING_DEFAULTS = dict(\
@@ -60,4 +61,9 @@ def initialize_logger(log_path, log_prefix='main_tmp_amft', format=LOGGING_DEFAU
         log_prefix is of type Sring
     '''
     full_log_path = synthesize_log_path(log_path, log_prefix)
-    logging.basicConfig(filename=full_log_path, format=format, datefmt=datefmt, level=level)
+    if len(logging.root.handlers) == 0:
+        handlers = list()
+        handlers.append(ProcessAwareFileHandler(full_log_path))
+        logging.basicConfig(format=format, datefmt=datefmt, level=level, handlers=handlers)
+    else:
+        addProcessScopedHandler(full_log_path)

@@ -93,7 +93,7 @@ class LoggedQueueWorker(QueueWorker):
 
 class WorkerPool(object):
     '''
-    Class to manage pool of QueueWorker instances
+    Class to manage pool of process workers
     '''
     def __init__(self, task_queue, task_class, daemonize=True, worker_class=LoggedQueueWorker, worker_count=(2 if cpu_count() <= 4 else 4), worker_kwargs=dict(), task_kwargs=dict()):
         self._queue = task_queue
@@ -112,7 +112,7 @@ class WorkerPool(object):
             str(self.daemon),\
             str(self.worker_count),\
             ', **' + str(self._task_kwargs) if len(self._task_kwargs) > 0 else '')
-    def add_task(self, *args, **kwargs):
+    def add_task(self, *args, poison_pill=False, **kwargs):
         '''
         Args:
             N/A
@@ -124,7 +124,8 @@ class WorkerPool(object):
         action = 'put'
         task_args = dict(kwargs)
         task_args.update(self._task_kwargs)
-        getattr(self._queue, action)(self._task_class(*args, **task_args))
+        task = self._task_class(*args, **task_args) if not poison_pill else None
+        getattr(self._queue, action)(task)
     def add_poison_pills(self):
         '''
         Args:
@@ -135,7 +136,7 @@ class WorkerPool(object):
             N/A
         '''
         for i in range(self.worker_count):
-            self.add_task(None)
+            self.add_task(poison_pill=True)
     def start(self):
         '''
         Args:
@@ -164,7 +165,7 @@ class WorkerPool(object):
         Preconditions:
             N/A
         '''
-        if isinstance(self._queue, type(JoinableQueue)):
+        if hasattr(self._queue, 'join') and callable(self._queue.join):
             self._queue.join()
         return True
     def join_workers(self):

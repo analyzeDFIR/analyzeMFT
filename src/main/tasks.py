@@ -28,8 +28,8 @@ class ParseCSVTask(object):
         self.sep = sep
     def __call__(self, worker_name):
         mft_entry = MFTEntry(self.mft_record)
-        target_file = self.target
-        #target_file = path.join(self.target, '%s_amft_csv.tmp'%worker_name)
+        #target_file = self.target
+        target_file = path.join(self.target, '%s_amft_csv.tmp'%worker_name)
         result_set = list()
         if self.info_type == 'summary':
             # FIELDS: RecordNumber, Signature, SequenceNumber, LogFileSequenceNumber, BaseFileRecordSegmentNumber, BaseFileRecordSequenceNumber, 
@@ -87,7 +87,11 @@ class ParseCSVTask(object):
             if len(result_set) > 0:
                 with open(target_file, 'a') as f:
                     for result in result_set:
-                        f.write(self.sep.join(result) + '\n')
+                        try:
+                            Logger.info('Writing %s to output file %s'%(str(result), target_file))
+                            f.write(self.sep.join(result) + '\n')
+                        except Exception as e:
+                            Logger.error('Failed to write %s to output file %s (%s)'%(str(result), target_file, str(e)))
         except Exception as e:
             Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))
 

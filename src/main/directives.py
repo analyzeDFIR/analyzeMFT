@@ -56,6 +56,7 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
                 for subsrc in glob(path.join(src, '*')):
                     frontier.append(subsrc)
         if gen:
+            yield len(frontier)
             for node in frontier:
                 yield node
         else:
@@ -136,22 +137,42 @@ class ParseCSVDirective(BaseDirective):
         args.target = path.abspath(args.target)
         target_parent = path.dirname(args.target)
         frontier = cls.get_frontier(args.sources)
-        record_count = 0
-        for nodeidx, node in enumerate(frontier):
-            Logger.info('Parsing $MFT file %s'%node)
-            mft_file = open(node, 'rb')
-            try:
-                recordidx = 0
-                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                while mft_record != '' and (args.count is None or record_count < args.count):
-                    tasks.ParseCSVTask(nodeidx, recordidx, args.info_type, mft_record, target=args.target, sep=args.sep)('')
+        frontier_count = next(frontier)
+        if frontier_count > 0 and args.count > 0:
+            worker_pool = parallel.WorkerPool(\
+                parallel.JoinableQueue(-1), 
+                tasks.ParseCSVTask, 
+                daemonize=False, 
+                worker_count=args.threads,
+                worker_kwargs=dict(log_path=args.log_path),
+                task_kwargs=dict(target=args.target, sep=args.sep)\
+            )
+            worker_pool.start()
+            record_count = 0
+            for nodeidx, node in enumerate(frontier):
+                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                mft_file = open(node, 'rb')
+                try:
+                    recordidx = 0
                     mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                    recordidx += 1
-                    record_count += 1
-            finally:
-                mft_file.close()
-            if args.count is not None and record_count >= args.count:
-                break
+                    while mft_record != '' and record_count < args.count:
+                        worker_pool.add_task(nodeidx, recordidx, args.info_type, mft_record, target=args.target, sep=args.sep)
+                        #tasks.ParseCSVTask(nodeidx, recordidx, args.info_type, mft_record, target=args.target, sep=args.sep)('')
+                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                        recordidx += 1
+                        record_count += 1
+                finally:
+                    mft_file.close()
+                print('::: Joining tasks')
+                worker_pool.join_tasks()
+                if record_count >= args.count:
+                    break
+            print('::: Adding poison pills')
+            worker_pool.add_poison_pills()
+            print('::: Joining workers')
+            worker_pool.join_workers()
+            print('::: Terminating workers')
+            worker_pool.terminate()
 
 class ParseBODYDirective(BaseDirective):
     '''
@@ -177,22 +198,24 @@ class ParseBODYDirective(BaseDirective):
         assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
         args.target = path.abspath(args.target)
         frontier = cls.get_frontier(args.sources)
-        record_count = 0
-        for nodeidx, node in enumerate(frontier):
-            Logger.info('Parsing $MFT file %s'%node)
-            mft_file = open(node, 'rb')
-            try:
-                recordidx = 0
-                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                while mft_record != '' and (args.count is None or record_count < args.count):
-                    tasks.ParseBODYTask(nodeidx, recordidx, mft_record, target=args.target, sep=args.sep)('')
+        frontier_count = next(frontier)
+        if frontier_count > 0 and args.count > 0:
+            record_count = 0
+            for nodeidx, node in enumerate(frontier):
+                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                mft_file = open(node, 'rb')
+                try:
+                    recordidx = 0
                     mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                    recordidx += 1
-                    record_count += 1
-            finally:
-                mft_file.close()
-            if args.count is not None and record_count >= args.count:
-                break
+                    while mft_record != '' and record_count < args.count:
+                        tasks.ParseBODYTask(nodeidx, recordidx, mft_record, target=args.target, sep=args.sep)('')
+                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                        recordidx += 1
+                        record_count += 1
+                finally:
+                    mft_file.close()
+                if record_count >= args.count:
+                    break
 
 class ParseJSONDirective(BaseDirective):
     '''
@@ -218,19 +241,21 @@ class ParseJSONDirective(BaseDirective):
         assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
         args.target = path.abspath(args.target)
         frontier = cls.get_frontier(args.sources)
-        record_count = 0
-        for nodeidx, node in enumerate(frontier):
-            Logger.info('Parsing $MFT file %s'%node)
-            mft_file = open(node, 'rb')
-            try:
-                recordidx = 0
-                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                while mft_record != '' and (args.count is None or record_count < args.count):
-                    tasks.ParseJSONTask(nodeidx, recordidx, mft_record, target=args.target, pretty=args.pretty)('')
+        frontier_count = next(frontier)
+        if frontier_count > 0 and args.count > 0:
+            record_count = 0
+            for nodeidx, node in enumerate(frontier):
+                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                mft_file = open(node, 'rb')
+                try:
+                    recordidx = 0
                     mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                    recordidx += 1
-                    record_count += 1
-            finally:
-                mft_file.close()
-            if args.count is not None and record_count >= args.count:
-                break
+                    while mft_record != '' and record_count < args.count:
+                        tasks.ParseJSONTask(nodeidx, recordidx, mft_record, target=args.target, pretty=args.pretty)('')
+                        mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                        recordidx += 1
+                        record_count += 1
+                finally:
+                    mft_file.close()
+                if record_count >= args.count:
+                    break

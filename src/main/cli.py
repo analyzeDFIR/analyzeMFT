@@ -40,12 +40,12 @@ def initialize_parser():
     base_parent.add_argument('--lpath', type=str, default=path.abspath(path.dirname(sys.argv[0])), help='Path to log file directory (i.e. /path/to/logs or C:\\Users\\<user>\\Documents\\)', dest='log_path')
     base_parent.add_argument('--lpref', type=str, default=None, help='Prefix for log file (default: amft_<date>)', dest='log_prefix')
     base_parent.add_argument('-s', '--source', action='append', help='Path to input file(s)', dest='sources')
-    base_parent.add_argument('-c', '--count', default=None, type=int, help='Number of records to process', dest='count')
+    base_parent.add_argument('-c', '--count', default=sys.maxsize, type=int, help='Number of records to process', dest='count')
     base_parent.add_argument('--threads', default=(2 if CPU_COUNT <= 4 else 4), type=int, help='Number of threads to use', dest='threads')
 
     ## Base output parent
     base_output_parent = ArgumentParser(add_help=False)
-    base_output_parent.add_argument('-t', '--target', type=str, help='Path to output file', dest='target')
+    base_output_parent.add_argument('-t', '--target', type=str, required=True, help='Path to output file', dest='target')
 
     ## CSV output parent parser
     csv_output_parent = ArgumentParser(parents=[base_output_parent], add_help=False)
