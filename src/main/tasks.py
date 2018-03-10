@@ -163,7 +163,7 @@ class ParseBODYTask(ParseCSVTask):
         result_set = list()
         # FIELDS: nodeidx|recordidx|MD5|name|inode|mode_as_string|UID|GID|size|atime|mtime|ctime|crtime
         try:
-            mft_entry.parse()
+            mft_entry.parse(attr_filter=['STANDARD_INFORMATION', 'FILE_NAME'])
         except Exception as e:
             Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         else:

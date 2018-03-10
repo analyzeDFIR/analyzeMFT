@@ -23,7 +23,7 @@
 
 import sys
 from os import path
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 
 from src.main.directives import DirectiveRegistry
 from src.utils.parallel import CPU_COUNT
