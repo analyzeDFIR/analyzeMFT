@@ -25,6 +25,7 @@ import logging
 Logger = logging.getLogger(__name__)
 import sys
 from os import path, stat
+from glob import glob
 from argparse import Namespace
 from time import sleep
 from tqdm import tqdm
@@ -207,7 +208,6 @@ class ParseCSVDirective(BaseParseFileOutputDirective):
     Directive for parsing $MFT file to CSV format
     '''
     _TASK_CLASS = tasks.ParseCSVTask
-
 
     @classmethod
     def _get_task_kwargs(cls, args, target_parent):

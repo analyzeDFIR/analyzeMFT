@@ -23,7 +23,7 @@
 
 import logging
 Logger = logging.getLogger(__name__)
-from os import remove, rename
+from os import remove, rename, path
 from uuid import uuid4
 from multiprocessing import Process, JoinableQueue, cpu_count
 from glob import glob
@@ -53,7 +53,7 @@ def coalesce_files(glob_pattern, target, transform=lambda line: line, clean=True
     file_list = glob(glob_pattern)
     if len(file_list) == 0:
         return
-    elif len(file_list) == 1:
+    elif len(file_list) == 1 and not path.exists(file_list[0]):
         rename(file_list[0], target)
     else:
         handle_list = [open(filepath, 'r') for filepath in file_list]

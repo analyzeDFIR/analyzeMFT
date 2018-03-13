@@ -23,3 +23,6 @@
 
 from .access_control import *
 from .mft import *
+from .guid import *
+from .misc import *
+from .sid import *
