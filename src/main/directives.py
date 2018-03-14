@@ -160,22 +160,29 @@ class BaseParseFileOutputDirective(BaseDirective):
         '''
         assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
         args.target = path.abspath(args.target)
-        target_parent = path.dirname(args.target)
+        args.target_parent = path.dirname(args.target)
         frontier = cls.get_frontier(args.sources)
         frontier_count = len(frontier)
         if frontier_count > 0 and args.count > 0 and cls._TASK_CLASS is not None:
+            tqdm.set_lock(parallel.RLock())
+            progress_pool = parallel.WorkerPool(\
+                parallel.JoinableQueue(-1), 
+                None,
+                worker_class=parallel.ProgressTrackerWorker,
+                worker_count=1\
+            )
+            args.result_queue = progress_pool.queue
             worker_pool = parallel.WorkerPool(\
                 parallel.JoinableQueue(-1), 
                 cls._TASK_CLASS, 
                 daemonize=False, 
                 worker_count=args.threads,
                 worker_kwargs=cls._get_worker_kwargs(args),
-                task_kwargs=cls._get_task_kwargs(args, target_parent)\
+                task_kwargs=cls._get_task_kwargs(args)\
             )
             worker_pool.start()
             record_count = 0
-            track_by_records = args.count == sys.maxsize
-            with tqdm(total=frontier_count if track_by_records else args.count, desc='Total', unit='files' if track_by_records else 'records') as node_progress:
+            with tqdm(total=frontier_count, desc='Total', unit='files') as node_progress:
                 for nodeidx, node in enumerate(frontier):
                     Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
                     mft_file = open(node, 'rb')
@@ -183,25 +190,33 @@ class BaseParseFileOutputDirective(BaseDirective):
                         recordidx = 0
                         remaining_count = cls._get_remaining_count(node, record_count, args.count)
                         if remaining_count > 0:
-                            with tqdm(total=remaining_count, desc='%d. %s'%(nodeidx, path.basename(node)), unit='records') as record_progress:
+                            progress_pool.worker_kwargs = dict(\
+                                pcount=remaining_count,
+                                pdesc='%d. %s'%(nodeidx, path.basename(node)),
+                                punit='records'\
+                            )
+                            progress_pool.refresh()
+                            progress_pool.start()
+                            mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                            while mft_record != '' and remaining_count > 0:
+                                worker_pool.add_task(nodeidx, recordidx, mft_record)
                                 mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                                while mft_record != '' and remaining_count > 0:
-                                    worker_pool.add_task(nodeidx, recordidx, mft_record)
-                                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                                    recordidx += 1
-                                    remaining_count -= 1
-                                    record_progress.update(1)
+                                recordidx += 1
+                                remaining_count -= 1
                     finally:
                         record_count += (recordidx + 1)
                         mft_file.close()
                     worker_pool.join_tasks()
-                    node_progress.update(1 if args.count == sys.maxsize else recordidx)
+                    progress_pool.join_tasks()
+                    progress_pool.add_poison_pills()
+                    progress_pool.join_workers()
+                    node_progress.update(1)
                     if record_count >= args.count:
                         break
             worker_pool.add_poison_pills()
             worker_pool.join_workers()
             worker_pool.terminate()
-            parallel.coalesce_files(path.join(target_parent, '*_tmp_amft.out'), args.target)
+            parallel.coalesce_files(path.join(args.target_parent, '*_tmp_amft.out'), args.target)
 
 class ParseCSVDirective(BaseParseFileOutputDirective):
     '''
@@ -210,17 +225,17 @@ class ParseCSVDirective(BaseParseFileOutputDirective):
     _TASK_CLASS = tasks.ParseCSVTask
 
     @classmethod
-    def _get_task_kwargs(cls, args, target_parent):
+    def _get_task_kwargs(cls, args):
         '''
         @BaseParseFileOutputDirective._get_task_kwargs
         '''
-        return dict(info_type=args.info_type, target=target_parent, sep=args.sep)
+        return dict(info_type=args.info_type, target=args.target_parent, sep=args.sep)
     @classmethod
     def _get_worker_kwargs(cls, args):
         '''
         @BaseParseFileOutputDirective._get_worker_kwargs
         '''
-        return dict(log_path=args.log_path)
+        return dict(result_queue=args.result_queue, log_path=args.log_path)
     @classmethod
     def run(cls, args):
         '''
@@ -248,19 +263,18 @@ class ParseBODYDirective(BaseParseFileOutputDirective):
     '''
     _TASK_CLASS = tasks.ParseBODYTask
 
-
     @classmethod
-    def _get_task_kwargs(cls, args, target_parent):
+    def _get_task_kwargs(cls, args):
         '''
         @BaseParseFileOutputDirective._get_task_kwargs
         '''
-        return dict(target=target_parent, sep=args.sep)
+        return dict(target=args.target_parent, sep=args.sep)
     @classmethod
     def _get_worker_kwargs(cls, args):
         '''
         @BaseParseFileOutputDirective._get_worker_kwargs
         '''
-        return dict(log_path=args.log_path)
+        return dict(result_queue=args.result_queue, log_path=args.log_path)
     @classmethod
     def run(cls, args):
         '''
@@ -287,17 +301,17 @@ class ParseJSONDirective(BaseParseFileOutputDirective):
     _TASK_CLASS = tasks.ParseJSONTask
 
     @classmethod
-    def _get_task_kwargs(cls, args, target_parent):
+    def _get_task_kwargs(cls, args):
         '''
         @BaseParseFileOutputDirective._get_task_kwargs
         '''
-        return dict(target=target_parent, pretty=args.pretty if args.threads == 1 else False)
+        return dict(target=args.target_parent, pretty=args.pretty if args.threads == 1 else False)
     @classmethod
     def _get_worker_kwargs(cls, args):
         '''
         @BaseParseFileOutputDirective._get_worker_kwargs
         '''
-        return dict(log_path=args.log_path)
+        return dict(result_queue=args.result_queue, log_path=args.log_path)
     @classmethod
     def run(cls, args):
         '''

@@ -47,6 +47,7 @@ class BaseParseTask(object):
         mft_entry = MFTEntry(self.mft_record)
         result_set = self._get_resultset(mft_entry)
         self._handle_resultset(result_set, worker_name)
+        return True
 
 class BaseParseFileOutputTask(BaseParseTask):
     '''
@@ -62,7 +63,10 @@ class BaseParseFileOutputTask(BaseParseTask):
                 with open(target_file, 'a') as f:
                     for result in result_set:
                         try:
-                            f.write(self.sep.join(result) + '\n')
+                            if hasattr(self, 'sep'):
+                                f.write(self.sep.join(result) + '\n')
+                            else:
+                                f.write(result + '\n')
                         except Exception as e:
                             Logger.error('Failed to write %s to output file %s (%s)'%(str(result), target_file, str(e)))
         except Exception as e:
@@ -102,22 +106,23 @@ class ParseCSVTask(BaseParseFileOutputTask):
                 raise
                 Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
             else:
-                result = list()
-                result.append(str(self.nodeidx))
-                result.append(str(self.recordidx))
-                result.append(str(mft_entry.Header.MFTRecordNumber))
-                result.append(str(mft_entry.Header.MultiSectorHeader.Signature))
-                result.append(str(mft_entry.Header.SequenceNumber))
-                result.append(str(mft_entry.Header.LogFileSequenceNumber))
-                result.append(str(mft_entry.Header.BaseFileRecordSegment.SegmentNumber))
-                result.append(str(mft_entry.Header.BaseFileRecordSegment.SequenceNumber))
-                result.append(str(mft_entry.Header.Flags.ACTIVE))
-                result.append(str(mft_entry.Header.Flags.HAS_INDEX))
-                result.append(str(mft_entry.Header.UsedSize))
-                result.append(str(mft_entry.Header.TotalSize))
-                result.append(str(mft_entry.Header.ReferenceCount))
-                result.append(str(mft_entry.Header.FirstAttributeId))
-                result.append(self._get_longest_filename(mft_entry.Attributes.FILE_NAME))
+                result = [\
+                    str(self.nodeidx),
+                    str(self.recordidx),
+                    str(mft_entry.Header.MFTRecordNumber),
+                    str(mft_entry.Header.MultiSectorHeader.Signature),
+                    str(mft_entry.Header.SequenceNumber),
+                    str(mft_entry.Header.LogFileSequenceNumber),
+                    str(mft_entry.Header.BaseFileRecordSegment.SegmentNumber),
+                    str(mft_entry.Header.BaseFileRecordSegment.SequenceNumber),
+                    str(mft_entry.Header.Flags.ACTIVE),
+                    str(mft_entry.Header.Flags.HAS_INDEX),
+                    str(mft_entry.Header.UsedSize),
+                    str(mft_entry.Header.TotalSize),
+                    str(mft_entry.Header.ReferenceCount),
+                    str(mft_entry.Header.FirstAttributeId),
+                    self._get_longest_filename(mft_entry.Attributes.FILE_NAME)\
+                ]
                 if len(mft_entry.Attributes.STANDARD_INFORMATION) > 0:
                     result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                     result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
@@ -146,7 +151,6 @@ class ParseCSVTask(BaseParseFileOutputTask):
 class ParseBODYTask(ParseCSVTask):
     '''
     '''
-    
     @staticmethod
     def to_timestamp(dt):
         '''
