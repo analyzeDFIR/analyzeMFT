@@ -28,56 +28,181 @@ from hashlib import md5
 from itertools import chain as itertools_chain
 from datetime import datetime, timezone, timedelta
 from json import dumps
-from construct import Container
+from construct.lib import Container
 
 from src.parsers.mft import MFTEntry
 
 class BaseParseTask(object):
     '''
+    Base class for parsing tasks
     '''
-    NULL = None
 
-    def __init__(self, nodeidx, recordidx, mft_record, **kwargs):
-        self.nodeidx = nodeidx
-        self.recordidx = recordidx
-        self.mft_record = mft_record
-        for kwarg in kwargs:
-            setattr(self, kwarg, kwargs[kwarg])
-    def __call__(self, worker_name):
-        mft_entry = MFTEntry(self.mft_record)
-        result_set = self._get_resultset(mft_entry)
-        self._handle_resultset(result_set, worker_name)
-        return True
+    def __init__(self, source):
+        self._source = source
+        self._resultset = None
+    @property
+    def source(self):
+        '''
+        @source.getter
+        '''
+        return self._source
+    @source.setter
+    def source(self, value):
+        '''
+        @source.setter
+        Preconditions:
+            N/A
+        '''
+        raise AttributeError('source attribute must be set in the constructor')
+    @property
+    def resultset(self):
+        '''
+        @resultset.getter
+        '''
+        return self._resultset
+    @resultset.setter
+    def resultset(self, value):
+        '''
+        @_resultset.setter
+        Preconditions:
+            value if of type List<Any>
+        '''
+        assert isinstance(value, list)
+        self._resultset = value
+    def extract_resultset(self, worker):
+        '''
+        Args:
+            worker: BaseQueueWorker => worker that called this task
+        Procedure:
+            Convert source into result set
+        Preconditions:
+            worker is subclass of BaseQueueWorker
+        '''
+        raise NotImplementedError('extract_resultset method not implemented for %s'%type(self).__name__)
+    def process_resultset(self, worker):
+        '''
+        Args:
+            worker: BaseQueueWorker => worker that called this task
+        Returns:
+            List<Any>
+            Process result set created in extract_resultset and return results of processing
+        Preconditions:
+            worker is subclass of BaseQueueWorker
+        '''
+        raise NotImplementedError('process_resultset method not implemented for %s'%type(self).__name__)
+    def __call__(self, worker):
+        '''
+        Args:
+            worker: BaseQueueWorker => worker that called this task
+        Returns:
+            Any
+            Result of running this task
+        Preconditions:
+            worker is subclass of BaseQueueWorker
+        '''
+        self.extract_resultset(worker)
+        return self.process_resultset(worker)
 
 class BaseParseFileOutputTask(BaseParseTask):
     '''
+    Base class for tasks that write output to file
     '''
     NULL = ''
 
-    def _handle_resultset(self, result_set, worker_name):
+    def __init__(self, source, nodeidx, recordidx, **context):
+        super(BaseParseFileOutputTask, self).__init__(source)
+        self._nodeidx = nodeidx
+        self._recordidx = recordidx
+        if 'target' not in context:
+            raise KeyError('target was not provided as a keyword argument')
+        self._context = Container(**context)
+    @property
+    def nodeidx(self):
         '''
+        @nodeidx.getter
         '''
-        target_file = path.join(self.target, '%s_tmp_amft.out'%worker_name)
+        return self._nodeidx
+    @nodeidx.setter
+    def nodeidx(self, value):
+        '''
+        @nodeidx.setter
+        Preconditions:
+            N/A
+        '''
+        raise AttributeError('nodeidx attribute must be set in the constructor')
+    @property
+    def recordidx(self):
+        '''
+        @recordidx.getter
+        '''
+        return self._recordidx
+    @recordidx.setter
+    def recordidx(self, value):
+        '''
+        @recordidx.setter
+        Preconditions:
+            N/A
+        '''
+        raise AttributeError('recordidx attribute must be set in the constructor')
+    @property
+    def context(self):
+        '''
+        @context.getter
+        '''
+        return self._context
+    @context.setter
+    def context(self, value):
+        '''
+        @context.setter
+        Preconditions:
+            value is of type Container
+        '''
+        if self._context is None:
+            assert isinstance(value, Container)
+            self._context = value
+        else:
+            raise AttributeError('context attribute has already been set')
+    def process_resultset(self, worker):
+        '''
+        @BaseParseTask.process_resultset
+        '''
+        target_file = path.join(self.context.target, '%s_tmp_amft.out'%worker.name)
         try:
-            if len(result_set) > 0:
+            if len(self.result_set) > 0:
+                successful_results = 0
                 with open(target_file, 'a') as f:
-                    for result in result_set:
+                    for result in self.result_set:
                         try:
-                            if hasattr(self, 'sep'):
-                                f.write(self.sep.join(result) + '\n')
+                            if 'sep' in self.context:
+                                f.write(self.context.sep.join(result) + '\n')
                             else:
                                 f.write(result + '\n')
+                            successful_results += 1
                         except Exception as e:
-                            Logger.error('Failed to write %s to output file %s (%s)'%(str(result), target_file, str(e)))
+                            Logger.error('Failed to write result for MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         except Exception as e:
-            Logger.error('Failed to write results to output file %s (%s)'%(target_file, str(e)))
+            Logger.error('Failed to write results for MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+        else:
+            Logger.info('Successfully wrote %d result(s) for MFT entry %d from node %d'%(successful_results, self.recordidx, self.nodeidx))
+        finally:
+            return [True]
 
-class ParseCSVTask(BaseParseFileOutputTask):
+class FileNameResolutionMixin(object):
     '''
+    Mixin class for working with file_name attributes
     '''
     @classmethod
     def _get_longest_filename(cls, file_name_set, default=None):
         '''
+        Args:
+            file_name_set: List<Container<String, Any>> => list of file_name attributes
+            default: Any                                => default value to return if not file_name found
+        Returns:
+            String
+            Longest file name if found, default otherwise
+        Preconditions:
+            class extending this mixin has (static) class attribute NULL
+            file_name_set is of type List<Container<String, Any>>   (assumed True)
         '''
         if default is None:
             default = cls.NULL
@@ -86,70 +211,82 @@ class ParseCSVTask(BaseParseFileOutputTask):
         file_name = None
         for attribute in file_name_set:
             if file_name is None or \
-                (hasattr(attribute.Data, 'FileName') and \
-                len(attribute.Data.FileName) > len(file_name)):
-                file_name = attribute.Data.FileName
+                (hasattr(attribute.body, 'FileName') and \
+                len(attribute.body.FileName) > len(file_name)):
+                file_name = attribute.body.FileName
         return file_name if file_name is not None else default
 
-    def _get_resultset(self, mft_entry):
-        result_set = list()
-        if self.info_type == 'summary':
-            # FIELDS: RecordNumber, Signature, SequenceNumber, LogFileSequenceNumber, BaseFileRecordSegmentNumber, BaseFileRecordSequenceNumber, 
-            #         Active, HasIndex, UsedSize, TotalSize, ReferenceCount, FirstAttributeId, FileName,
-            #         StandardInformationModifyDate, StandardInformationAccessDate, StandardInformationCreateDate, StandardInformationEntryDate,
-            #         FileNameModifyDate, FileNameAccessDate, FileNameCreateDate, FileNameEntryDate,
-            #         StandardInformationCount, AttributeListCount, FileNameCount, ObjectIDCount, SecurityDescriptorCount, VolumeNameCount,
-            #         VolumeInformationCount, DataCount, IndexRootCount, IndexAllocationCount
+
+class ParseCSVTask(BaseParseFileOutputTask, FileNameResolutionMixin):
+    '''
+    Class for parsing single MFT record to CSV format
+    '''
+    def extract_resultset(self, worker):
+        '''
+        @BaseParseTask.extract_resultset
+        '''
+        self.result_set = list()
+        # FIELDS: RecordNumber, Signature, SequenceNumber, LogFileSequenceNumber, BaseFileRecordSegmentNumber, BaseFileRecordSequenceNumber, 
+        #         Active, HasIndex, UsedSize, TotalSize, ReferenceCount, FirstAttributeId, FileName,
+        #         StandardInformationModifyDate, StandardInformationAccessDate, StandardInformationCreateDate, StandardInformationEntryDate,
+        #         FileNameModifyDate, FileNameAccessDate, FileNameCreateDate, FileNameEntryDate,
+        #         StandardInformationCount, AttributeListCount, FileNameCount, ObjectIDCount, SecurityDescriptorCount, VolumeNameCount,
+        #         VolumeInformationCount, DataCount, IndexRootCount, IndexAllocationCount
+        if self.context.info_type == 'summary':
             try:
+                mft_entry = MFTEntry(self.source)
                 mft_entry.parse()
             except Exception as e:
-                raise
                 Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
             else:
-                result = [\
-                    str(self.nodeidx),
-                    str(self.recordidx),
-                    str(mft_entry.Header.MFTRecordNumber),
-                    str(mft_entry.Header.MultiSectorHeader.Signature),
-                    str(mft_entry.Header.SequenceNumber),
-                    str(mft_entry.Header.LogFileSequenceNumber),
-                    str(mft_entry.Header.BaseFileRecordSegment.SegmentNumber),
-                    str(mft_entry.Header.BaseFileRecordSegment.SequenceNumber),
-                    str(mft_entry.Header.Flags.ACTIVE),
-                    str(mft_entry.Header.Flags.HAS_INDEX),
-                    str(mft_entry.Header.UsedSize),
-                    str(mft_entry.Header.TotalSize),
-                    str(mft_entry.Header.ReferenceCount),
-                    str(mft_entry.Header.FirstAttributeId),
-                    self._get_longest_filename(mft_entry.Attributes.FILE_NAME)\
-                ]
-                if len(mft_entry.Attributes.STANDARD_INFORMATION) > 0:
-                    result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                    result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                    result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                    result.append(mft_entry.Attributes.STANDARD_INFORMATION[0].Data.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                else:
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                if len(mft_entry.Attributes.FILE_NAME) > 0:
-                    result.append(mft_entry.Attributes.FILE_NAME[0].Data.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                    result.append(mft_entry.Attributes.FILE_NAME[0].Data.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                    result.append(mft_entry.Attributes.FILE_NAME[0].Data.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                    result.append(mft_entry.Attributes.FILE_NAME[0].Data.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                else:
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                for key in mft_entry.Attributes.iterkeys:
-                    result.append(str(len(mft_entry.Attributes[key])))
-                result_set.append(result)
-        return result_set
+                try:
+                    result = [\
+                        str(self.nodeidx),
+                        str(self.recordidx),
+                        str(mft_entry.header.MFTRecordNumber),
+                        str(mft_entry.header.MultiSectorHeader.Signature),
+                        str(mft_entry.header.SequenceNumber),
+                        str(mft_entry.header.LogFileSequenceNumber),
+                        str(mft_entry.header.BaseFileRecordSegment.SegmentNumber),
+                        str(mft_entry.header.BaseFileRecordSegment.SequenceNumber),
+                        str(mft_entry.header.Flags.ACTIVE),
+                        str(mft_entry.header.Flags.HAS_INDEX),
+                        str(mft_entry.header.UsedSize),
+                        str(mft_entry.header.TotalSize),
+                        str(mft_entry.header.ReferenceCount),
+                        str(mft_entry.header.FirstAttributeId),
+                        self._get_longest_filename(mft_entry.file_name)\
+                    ]
+                    if len(mft_entry.standard_information) > 0:
+                        result.append(mft_entry.standard_information[0].body.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.standard_information[0].body.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.standard_information[0].body.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.standard_information[0].body.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                    else:
+                        result.append(self.NULL)
+                        result.append(self.NULL)
+                        result.append(self.NULL)
+                        result.append(self.NULL)
+                    if len(mft_entry.file_name) > 0:
+                        result.append(mft_entry.file_name[0].body.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.file_name[0].body.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.file_name[0].body.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.file_name[0].body.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                    else:
+                        result.append(self.NULL)
+                        result.append(self.NULL)
+                        result.append(self.NULL)
+                        result.append(self.NULL)
+                    for key in mft_entry:
+                        if not key.startswith('_'):
+                            result.append(str(len(mft_entry[key])))
+                    self.result_set.append(result)
+                except Exception as e:
+                    Logger.error('Failed to create CSV output record of MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
 
-class ParseBODYTask(ParseCSVTask):
+class ParseBODYTask(BaseParseFileOutputTask, FileNameResolutionMixin):
     '''
+    Task class for parsing single MFT entry to BODY format
     '''
     @staticmethod
     def to_timestamp(dt):
@@ -157,68 +294,147 @@ class ParseBODYTask(ParseCSVTask):
         Args:
             dt: DateTime<UTC>   => datetime object to convert
         Returns:
+            Float
             Datetime object converted to Unix epoch time
         Preconditions:
             dt is timezone-aware timestamp with timezone UTC
         '''
         return (dt - datetime(1970,1,1, tzinfo=timezone.utc)) / timedelta(seconds=1)
 
-    def _get_resultset(self, mft_entry):
-        result_set = list()
+    def extract_resultset(self, worker):
+        '''
+        @BaseParseTask.extract_resultset
+        '''
+        self.result_set = list()
         # FIELDS: nodeidx|recordidx|MD5|name|inode|mode_as_string|UID|GID|size|atime|mtime|ctime|crtime
         try:
-            mft_entry.parse(attr_filter=['STANDARD_INFORMATION', 'FILE_NAME'])
+            mft_entry = MFTEntry(self.source)
+            mft_entry.parse()
         except Exception as e:
             Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         else:
-            if len(mft_entry.Attributes.STANDARD_INFORMATION) > 0 or len(mft_entry.Attributes.FILE_NAME) > 0:
-                file_name = self._get_longest_filename(mft_entry.Attributes.FILE_NAME)
-                file_size = str(mft_entry.Attributes.FILE_NAME[0].Data.FileSize if len(mft_entry.Attributes.FILE_NAME) > 0 else self.NULL)
-                md5hash = md5(self.mft_record).hexdigest()
-                for attribute in itertools_chain(mft_entry.Attributes.STANDARD_INFORMATION, mft_entry.Attributes.FILE_NAME):
-                    result = list()
-                    result.append(str(self.nodeidx))
-                    result.append(str(self.recordidx))
-                    result.append(md5hash)
-                    result.append(file_name)
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                    result.append(self.NULL)
-                    result.append('FN' if hasattr(attribute.Data, 'ParentDirectory') else 'SI')
-                    result.append(str(file_size))
-                    result.append(str(self.to_timestamp(attribute.Data.LastAccessTime)))
-                    result.append(str(self.to_timestamp(attribute.Data.LastModifiedTime)))
-                    result.append(str(self.to_timestamp(attribute.Data.EntryModifiedTime)))
-                    result.append(str(self.to_timestamp(attribute.Data.CreateTime)))
-                    result_set.append(result)
-        return result_set
+            try:
+                if len(mft_entry.standard_information) > 0 or len(mft_entry.file_name) > 0:
+                    file_name = self._get_longest_filename(mft_entry.file_name)
+                    file_size = str(mft_entry.file_name[0].body.FileSize if len(mft_entry.file_name) > 0 else self.NULL)
+                    md5hash = md5(mft_entry._raw_entry).hexdigest()
+                    for attribute in itertools_chain(mft_entry.standard_information, mft_entry.file_name):
+                        try:
+                            result = list()
+                            result.append(str(self.nodeidx))
+                            result.append(str(self.recordidx))
+                            result.append(md5hash)
+                            result.append(file_name)
+                            result.append(self.NULL)
+                            result.append(self.NULL)
+                            result.append(self.NULL)
+                            result.append('FN' if hasattr(attribute.body, 'ParentDirectory') else 'SI')
+                            result.append(str(file_size))
+                            result.append(str(self.to_timestamp(attribute.body.LastAccessTime)))
+                            result.append(str(self.to_timestamp(attribute.body.LastModifiedTime)))
+                            result.append(str(self.to_timestamp(attribute.body.EntryModifiedTime)))
+                            result.append(str(self.to_timestamp(attribute.body.CreateTime)))
+                            self.result_set.append(result)
+                        except Exception as e:
+                                Logger.error('Failed to create BODY output record of MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+            except Exception as e:
+                    Logger.error('Failed to create BODY output records of MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
 
 class ParseJSONTask(BaseParseFileOutputTask):
     '''
+    Class for parsing single MFT entry to JSON format
     '''
-    def _get_resultset(self, mft_entry):
-        result_set = list()
+    def extract_resultset(self, worker):
+        '''
+        @BaseParseTask.extract_resultset
+        '''
+        self.result_set = list()
         try:
-            mft_entry.parse()
-            ## This is lazy - figure out why FieldBountDict is not serializable
-            ## It appears that FieldBoundDict needs to implement __dict__
-            for attribute in itertools_chain(mft_entry.Attributes.STANDARD_INFORMATION, mft_entry.Attributes.FILE_NAME):
-                attribute.Data.LastAccessTime = attribute.Data.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
-                attribute.Data.LastModifiedTime = attribute.Data.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
-                attribute.Data.EntryModifiedTime = attribute.Data.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
-                attribute.Data.CreateTime = attribute.Data.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z')
-            for attribute_list in mft_entry.Attributes.ATTRIBUTE_LIST:
-                attribute_list = Container(**attribute_list)
-            for attribute_type in mft_entry.Attributes.iterkeys:
-                if len(mft_entry.Attributes[attribute_type]) == 0:
-                    mft_entry.Attributes[attribute_type] = None
-            serializable_entry = Container(**mft_entry)
-            serializable_entry.Attributes = Container(**serializable_entry.Attributes)
-            serializable_entry.nodeidx = self.nodeidx
-            serializable_entry.recordidx = self.recordidx
-            result = dumps(serializable_entry, sort_keys=True, indent=(2 if self.pretty else None))
+            mft_entry = MFTEntry(self.source)
+            result = dumps(mft_entry.parse().serialize(), sort_keys=True, indent=(2 if self.context.pretty else None))
         except Exception as e:
             Logger.error('Failed to parse MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         else:
-            result_set.append(result)
-        return result_set
+            try:
+                self.result_set.append(result)
+            except Exception as e:
+                Logger.error('Failed to create JSON output records of MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+
+class ParseDBTaskStage2(BaseParseTask):
+    '''
+    Class to push MFT entry information to database
+    '''
+    def extract_resultset(self, worker):
+        '''
+        @BaseParseTask.extract_resultset
+        '''
+        self.result_set = list()
+        for mft_entry in self.source:
+            try:
+                ledger = db.FileLedger().populate_fields(mft_entry.get_metadata())
+            except Exception as e:
+                Logger.error('Failed to get metadata from %s (%s)'%(mft_entry._filepath, str(e)))
+            else:
+                try:
+                    ledger.header = db.Header().populate_fields(mft_entry.header)
+                except Exception as e:
+                    Logger.error('Failed to get header information from %s (%s)'%(mft_entry._filepath, str(e)))
+                else:
+                    pass
+                    #ledger.complete = True
+                    #self.result_set.append(ledger)
+                    #Logger.info('Successfully constructed database object from %s'%pf._filepath)
+    def process_resultset(self, worker):
+        '''
+        @BaseParseTask.process_resultset
+        '''
+        if worker.manager.session is None:
+            try:
+                worker.manager.create_session()
+            except Exception as e:
+                Logger.error('Failed to create database session (%s)'%str(e))
+                return [False]
+        successful_results = 0
+        for result in self.result_set:
+            try:
+                worker.manager.add(result)
+                worker.manager.commit()
+                successful_results += 1
+            except Exception as e:
+                Logger.error('Failed to commit result to database (%s)'%str(e))
+                worker.manager.rollback()
+        if successful_results > 0:
+            Logger.info('Successfully committed %d result(s) to database'%successful_results)
+        return [True]
+
+class ParseDBTaskStage1(BaseParseFileOutputTask):
+    '''
+    Task class to parse single MFT entry in preparation for insertion into DB
+    '''
+
+    def __init__(self, source, nodeidx, recordidx):
+        super(BaseParseFileOutputTask, self).__init__(source)
+        self._nodeidx = nodeidx
+        self._recordidx = recordidx
+        self._context = None
+    def extract_resultset(self, worker):
+        '''
+        @BaseParseTask.extract_resultset
+        '''
+        self.result_set = list()
+        try:
+            mft_entry = MFTEntry(self.source)
+            mft_entry.parse()
+            mft_entry._stream = None
+        except Exception as e:
+            Logger.error('Failed to parse MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+        else:
+            try:
+                self.result_set.append(ParseDBTaskStage2([mft_entry]))
+            except Exception as e:
+                Logger.error('Failed to create DB output record for MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+    def process_resultset(self, worker):
+        '''
+        @BaseParseTask.process_resultset
+        '''
+        return self.result_set

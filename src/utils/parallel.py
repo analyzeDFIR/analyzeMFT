@@ -70,17 +70,65 @@ def coalesce_files(glob_pattern, target, transform=lambda line: line, clean=True
                 for path in file_list:
                     os.remove(path)
 
-class QueueWorker(Process):
+class BaseQueueWorker(Process):
     '''
     Class to spawn worker process with queue of tasks
     '''
-    def __init__(self, queue, position, result_queue=None, name=lambda: str(uuid4())):
-        super(QueueWorker, self).__init__(name=name() if callable(name) else name)
+    def __init__(self, queue, *args, result_queue=None, name=lambda: str(uuid4()), **kwargs):
+        super(BaseQueueWorker, self).__init__(name=name() if callable(name) else name)
         self._queue = queue
-        self._position = position
         self._result_queue = result_queue
-    def __repr__(self):
-        return 'QueueWorker(%s, name=%s)'%(type(self._queue).__name__ + '()', self.name)
+    def _preamble(self):
+        '''
+        Args:
+            N/A
+        Procedure:
+            Performs worker initialization tasks
+        Preconditions:
+            N/A
+        '''
+        return None
+    def _result_callback(self):
+        '''
+        Args:
+            N/A
+        Procedure:
+            Callback when a task is run and worker should continue
+        Preconditions:
+            N/A
+        '''
+        return None
+    def _closing_callback(self):
+        '''
+        Args:
+            N/A
+        Procedure:
+            Callback when the worker received a poison pill
+        Preconditions:
+            N/A
+        '''
+        return None
+    def _process_task(self):
+        '''
+        Args:
+            N/A
+        Returns:
+            Boolean
+            True if worker should continue, false otherwise
+        Preconditions:
+            N/A
+        '''
+        raise NotImplementedError('method _process_task not implemented for %s'%type(self).__name__)
+    def _postamble(self):
+        '''
+        Args:
+            N/A
+        Procedure:
+            Performs worker teardown tasks
+        Preconditions:
+            N/A
+        '''
+        return None
     def run(self):
         '''
         Args:
@@ -91,57 +139,96 @@ class QueueWorker(Process):
         Preconditions:
             N/A
         '''
+        self._preamble()
         while True:
-            task = self._queue.get()
-            try:
-                if task is None:
-                    break
-                result = task(self.name)
-                if self._result_queue is not None:
-                    self._result_queue.put(result)
-            except Exception as e:
-                Logger.error('Uncaught exception while executing %s (%s)'%(type(task).__name__, str(e)))
-                if self._result_queue is not None:
-                    self._result_queue.put(e)
-            finally:
-                self._queue.task_done()
+            result = self._process_task()
+            if not result:
+                self._closing_callback()
+                break
+            self._result_callback()
+        self._postamble()
 
-class LoggedQueueWorker(QueueWorker):
+class LoggedQueueWorker(BaseQueueWorker):
     '''
-    @QueueWorker
+    @BaseQueueWorker
     '''
     def __init__(self, *args, log_path=None, **kwargs):
         super(LoggedQueueWorker, self).__init__(*args, **kwargs)
         self._log_path = log_path
-    def run(self):
+    def _preamble(self):
         '''
-        @QueueWorker.run
+        @BaseQueueWorker._preamble
         '''
         if self._log_path is not None:
             initialize_logger(self._log_path, self.name + '_tmp_amft')
             Logger.info('Started worker: ' + self.name)
-            super(LoggedQueueWorker, self).run()
+    def _process_task(self):
+        '''
+        @BaseQueueWorker._process_task
+        '''
+        task = self._queue.get()
+        try:
+            if task is None:
+                return False
+            result = task(self) if callable(task) else task
+            if self._result_queue is not None:
+                for entry in result:
+                    self._result_queue.put(entry)
+            return True
+        except Exception as e:
+            if self._log_path is not None:
+                Logger.error('Uncaught exception while executing %s (%s)'%(type(task).__name__, str(e)))
+            if self._result_queue is not None:
+                self._result_queue.put(e)
+            return True
+        finally:
+            self._queue.task_done()
+    def _postamble(self):
+        '''
+        @BaseQueueWorker._postamble
+        '''
+        if self._log_path is not None:
             Logger.info('Ended worker: ' + self.name)
 
-class ProgressTrackerWorker(QueueWorker):
+class ProgressTrackerWorker(LoggedQueueWorker):
+    '''
+    @BaseQueueWorker
+    '''
     def __init__(self, *args, pcount=None, pdesc=None, punit=None, **kwargs):
         super(ProgressTrackerWorker, self).__init__(*args, **kwargs)
         self._pcount = pcount
         self._pdesc = pdesc
         self._punit = punit
-    def run(self):
-        with tqdm(total=self._pcount, 
-            desc=self._pdesc, 
-            unit=self._punit) as progress:
-            while True:
-                task = self._queue.get()
-                try:
-                    if task is None:
-                        progress.close()
-                        break
-                    progress.update(1)
-                finally:
-                    self._queue.task_done()
+    def _preamble(self):
+        '''
+        @BaseQueueWorker._preamble
+        '''
+        super(ProgressTrackerWorker, self)._preamble()
+        self._progress = tqdm(total=self._pcount, desc=self._pdesc, unit=self._punit)
+    def _result_callback(self):
+        '''
+        @BaseQueueWorker._result_callback
+        '''
+        self._progress.update(1)
+    def _closing_callback(self):
+        '''
+        @BaseQueueWorker._closing_callback
+        '''
+        self._progress.close()
+
+class DBProgressTrackerWorker(ProgressTrackerWorker):
+    '''
+    @BaseQueueWorker
+    '''
+    def __init__(self, *args, manager=None, **kwargs):
+        super(DBProgressTrackerWorker, self).__init__(*args, **kwargs)
+        self.manager = manager
+    def _postamble(self):
+        '''
+        @BaseQueueWorker._postamble
+        '''
+        super(DBProgressTrackerWorker, self)._postamble()
+        self.manager.close_session()
 
 class WorkerPool(object):
     '''
@@ -170,6 +257,7 @@ class WorkerPool(object):
         Args:
             N/A
         Returns:
+            JoinableQueue
             Underlying queue of worker pool
         Preconditions:
             N/A
@@ -181,6 +269,7 @@ class WorkerPool(object):
         Args:
             N/A
         Returns:
+            Dict<String, Any>
             Arguments to be applied to all workers in pool
         Preconditions:
             N/A
@@ -194,9 +283,9 @@ class WorkerPool(object):
         Procedure:
             Sets arguments to be applied to all workers in pool
         Preconditions:
-            value is of type dict
+            value is of type Dict<String, Any>
         '''
-        assert isinstance(value, dict), 'Value is not of type dict'
+        assert isinstance(value, dict), 'Value is not of type Dict<String, Any>'
         self._worker_kwargs = value
     @property
     def task_kwargs(self):
@@ -204,6 +293,7 @@ class WorkerPool(object):
         Args:
             N/A
         Returns:
+            Dict<String, Any>
             Arguments to be applied to all tasks supplied to workers
         Preconditions:
             N/A
@@ -217,9 +307,9 @@ class WorkerPool(object):
         Procedure:
             Sets arguments to be applied to all tasks supplied to workers
         Preconditions:
-            value is of type dict
+            value is of type Dict<String, Any>
         '''
-        assert isinstance(value, dict), 'Value is not of type dict'
+        assert isinstance(value, dict), 'Value is not of type Dict<String, Any>'
         self._task_kwargs = value
     def add_task(self, *args, poison_pill=False, **kwargs):
         '''
@@ -235,7 +325,6 @@ class WorkerPool(object):
         task_args.update(self._task_kwargs)
         task = self._task_class(*args, **task_args) if not poison_pill else None
         getattr(self._queue, action)(task)
-        return True
     def add_poison_pills(self):
         '''
         Args:
@@ -247,7 +336,6 @@ class WorkerPool(object):
         '''
         for i in range(self.worker_count):
             self.add_task(poison_pill=True)
-        return True
     def initialize_workers(self):
         '''
         Args:
@@ -261,7 +349,6 @@ class WorkerPool(object):
             self._worker_class(self._queue, i, **self._worker_kwargs)\
             for i in range(self.worker_count)\
         ]
-        return True
     def start(self):
         '''
         Args:
@@ -277,7 +364,6 @@ class WorkerPool(object):
             if not worker.is_alive():
                 worker.daemon = self.daemon
                 worker.start()
-        return True
     def join_tasks(self):
         '''
         Args:
@@ -289,7 +375,6 @@ class WorkerPool(object):
         '''
         if hasattr(self._queue, 'join') and callable(self._queue.join):
             self._queue.join()
-        return True
     def join_workers(self):
         '''
         Args:
@@ -303,7 +388,6 @@ class WorkerPool(object):
             for worker in self._workers:
                 if worker.is_alive():
                     worker.join()
-        return True
     def terminate(self):
         '''
         Args:
@@ -317,7 +401,6 @@ class WorkerPool(object):
             for worker in self._workers:
                 if worker.is_alive():
                     worker.terminate()
-        return True
     def refresh(self):
         '''
         Args:
@@ -327,6 +410,5 @@ class WorkerPool(object):
         Preconditions:
             All worker processes have been killed
         '''
-        #self.terminate()
         self._workers = None
         self.initialize_workers()

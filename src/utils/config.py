@@ -32,7 +32,8 @@ from src.main.exceptions import PathInitializationError
 LOGGING_DEFAULTS = dict(\
     format='%(asctime)s.%(msecs)s\t%(levelname)s\t%(name)s\t%(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
-    level=logging.INFO)
+    level=logging.INFO\
+)
 
 def initialize_paths():
     '''
@@ -59,6 +60,15 @@ def initialize_paths():
 
 def synthesize_log_path(log_path, log_prefix=None):
     '''
+    Args:
+        log_path: String    => valid path to output log to
+        log_prefix: String  => prefix to log file
+    Returns:
+        String
+        Full log path given a path (parent directory) and prefix
+    Preconditions:
+        log_path is of type String
+        log_prefix is of type String
     '''
     assert isinstance(log_path, str) and path.exists(log_path), 'Log_path is not a valid path'
     assert isinstance(log_prefix, (type(None), str)), 'Log_prefix is not of type String'
@@ -71,12 +81,18 @@ def initialize_logger(log_path, log_prefix='main_tmp_amft', format=LOGGING_DEFAU
     Args:
         log_path: String    => valid path to output log to
         log_prefix: String  => prefix to log file
+        format: String      => log record format
+        datefmt: String     => log record date format
+        level: Integer      => minimum logging level to handle
     Procedure:
         Initialize root logger with formatter, level, and handler set to 
         FileHandler at path (log_path + log_prefix.log)
     Preconditions:
         log_path is of type String
-        log_prefix is of type Sring
+        log_prefix is of type Sring (assumed True)
+        format is of type String    (assumed True)
+        datefmt is of type String   (assumed True)
+        level is of type String     (assumed True)
     '''
     full_log_path = synthesize_log_path(log_path, log_prefix)
     if len(logging.root.handlers) == 0:

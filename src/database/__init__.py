@@ -1,5 +1,4 @@
 ## -*- coding: UTF-8 -*-
-## app.py
 ##
 ## Copyright (c) 2018 Noah Rubin
 ## 
@@ -21,21 +20,3 @@
 ## OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 ## SOFTWARE.
 
-from src.utils.config import initialize_paths
-initialize_paths()
-from src.main.cli import initialize_parser
-
-def amft_main():
-    ''''
-    Args:
-        N/A
-    Procedure:
-        Main entry point, parses command line arguments and runs according directive
-        with provided arguments
-    Preconditions:
-        N/A
-    '''
-    parser = initialize_parser()
-    args = parser.parse_args()
-    args.func(args)
-    return 0

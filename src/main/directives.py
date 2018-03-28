@@ -34,6 +34,8 @@ from src.utils.config import initialize_logger, synthesize_log_path
 from src.utils.registry import RegistryMetaclassMixin 
 import src.utils.parallel as parallel
 import src.main.tasks as tasks
+from src.database.manager import DBManager
+from src.database.models import BaseTable
 
 class DirectiveRegistry(RegistryMetaclassMixin, type):
     '''
@@ -77,6 +79,16 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
                 for subsrc in glob(path.join(src, '*')):
                     frontier.append(subsrc)
         return frontier
+    @classmethod
+    def _get_remaining_count(cls, filepath, record_count, max_records):
+        '''
+        '''
+        file_size = stat(filepath).st_size
+        if file_size < cls.MFT_RECORD_SIZE:
+            return None
+        file_records = file_size/cls.MFT_RECORD_SIZE
+        remaining_count = max_records - record_count
+        return file_records if file_records <= remaining_count else remaining_count
     @classmethod
     def run(cls, args):
         '''
@@ -134,16 +146,6 @@ class BaseParseFileOutputDirective(BaseDirective):
     _TASK_CLASS = None
 
     @classmethod
-    def _get_remaining_count(cls, filepath, record_count, max_records):
-        '''
-        '''
-        file_size = stat(filepath).st_size
-        if file_size < cls.MFT_RECORD_SIZE:
-            return None
-        file_records = file_size/cls.MFT_RECORD_SIZE
-        remaining_count = max_records - record_count
-        return file_records if file_records <= remaining_count else remaining_count
-    @classmethod
     def _get_task_kwargs(cls, args, target_parent):
         '''
         '''
@@ -168,6 +170,7 @@ class BaseParseFileOutputDirective(BaseDirective):
             progress_pool = parallel.WorkerPool(\
                 parallel.JoinableQueue(-1), 
                 None,
+                daemonize=False,
                 worker_class=parallel.ProgressTrackerWorker,
                 worker_count=1\
             )
@@ -199,7 +202,7 @@ class BaseParseFileOutputDirective(BaseDirective):
                             progress_pool.start()
                             mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                             while mft_record != '' and remaining_count > 0:
-                                worker_pool.add_task(nodeidx, recordidx, mft_record)
+                                worker_pool.add_task(mft_record, nodeidx, recordidx)
                                 mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                                 recordidx += 1
                                 remaining_count -= 1
@@ -215,7 +218,6 @@ class BaseParseFileOutputDirective(BaseDirective):
                         break
             worker_pool.add_poison_pills()
             worker_pool.join_workers()
-            worker_pool.terminate()
             parallel.coalesce_files(path.join(args.target_parent, '*_tmp_amft.out'), args.target)
 
 class ParseCSVDirective(BaseParseFileOutputDirective):
@@ -330,3 +332,130 @@ class ParseJSONDirective(BaseParseFileOutputDirective):
             args.pretty is of type Boolean          (assumed True)
         '''
         super(ParseJSONDirective, cls).run(args)
+
+class ParseDBDirective(BaseDirective):
+    '''
+    Directive for parsing $MFT file to DB format
+    '''
+    @staticmethod
+    def _prepare_conn_string(args):
+        '''
+        @ParseDBDirective.run
+        '''
+        assert (args.db_driver == 'sqlite' and path.exists(path.dirname(args.db_name))) or \
+            args.db_conn_string is not None or \
+            (args.db_user is not None and args.db_passwd is not None \
+            and args.db_host is not None and args.db_port is not None), 'Received invalid database config'
+        if args.db_conn_string is not None:
+            args.db_conn_string = args.db_conn_string.rstrip('/')
+            return args.db_conn_string + '/' + args.db_name
+        elif args.db_driver == 'sqlite':
+            args.db_name = path.abspath(args.db_name)
+            return args.db_driver + ':///' + args.db_name
+        else:
+            return args.db_driver + \
+                '://' + \
+                args.db_user + \
+                ':' + \
+                args.db_passwd + \
+                '@' + \
+                args.db_host + \
+                ':' + \
+                args.db_port + \
+                '/' + \
+                args.db_name
+    @classmethod
+    def run(cls, args):
+        '''
+        Args:
+            @BaseDirective.run_directive
+            args.db_driver: String      => database db_driver to use
+            args.db_name: String        => name of database to connect to
+            args.db_conn_string: String => database connection string
+            args.db_user: String        => name of database user
+            args.db_passwd: String      => password of database user
+            args.db_host: String        => hostname (IP address) of database
+            args.db_port: String        => port database is listening on
+        Procedure:
+            Parse Prefetch information to database
+        Preconditions:
+            @BaseDirective.run_directive
+            args.db_driver is of type String
+            args.db_name is of type String
+            args.db_conn_string is of type String
+            args.db_user is of type String
+            args.db_passwd is of type String
+            args.db_host is of type String
+            args.db_port is of type String
+            one of the following conditions must be true:
+                1) db_driver is sqlite and args.db_name is a valid path
+                2) args.db_conn_string is not None and is valid connection string 
+                3) args.db_user, args.db_passwd, args.db_host, and args.db_port are not None
+        '''
+        conn_string = cls._prepare_conn_string(args)
+        manager = DBManager(conn_string=conn_string, metadata=BaseTable.metadata)
+        try:
+            manager.initialize(bootstrap=True)
+        except Exception as e:
+            Logger.error('Failed to initialize database manager (%s)'%str(e))
+        else:
+            frontier = cls.get_frontier(args.sources)
+            frontier_count = len(frontier)
+            if frontier_count > 0:
+                tqdm.set_lock(parallel.RLock())
+                progress_pool = parallel.WorkerPool(\
+                    parallel.JoinableQueue(-1), 
+                    tasks.ParseDBTaskStage2,
+                    daemonize=False, 
+                    worker_class=parallel.DBProgressTrackerWorker,
+                    worker_count=1\
+                )
+                worker_pool = parallel.WorkerPool(\
+                    parallel.JoinableQueue(-1), 
+                    tasks.ParseDBTaskStage1, 
+                    daemonize=False, 
+                    worker_count=args.threads,
+                    worker_kwargs=dict(\
+                        result_queue=progress_pool.queue, 
+                        log_path=args.log_path\
+                    )
+                )
+                worker_pool.start()
+                record_count = 0
+                with tqdm(total=frontier_count, desc='Total', unit='files') as node_progress:
+                    for nodeidx, node in enumerate(frontier):
+                        Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                        mft_file = open(node, 'rb')
+                        try:
+                            recordidx = 0
+                            remaining_count = cls._get_remaining_count(node, record_count, args.count)
+                            if remaining_count > 0:
+                                progress_pool.worker_kwargs = dict(\
+                                    log_path=log_path,
+                                    pcount=remaining_count,
+                                    pdesc='%d. %s'%(nodeidx, path.basename(node)),
+                                    punit='records',
+                                    manager=manager\
+                                )
+                                progress_pool.refresh()
+                                progress_pool.start()
+                                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                                while mft_record != '' and remaining_count > 0:
+                                    worker_pool.add_task(mft_record, nodeidx, recordidx)
+                                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
+                                    recordidx += 1
+                                    remaining_count -= 1
+                        finally:
+                            record_count += (recordidx + 1)
+                            mft_file.close()
+                        worker_pool.join_tasks()
+                        progress_pool.join_tasks()
+                        progress_pool.add_poison_pills()
+                        progress_pool.join_workers()
+                        node_progress.update(1)
+                        if record_count >= args.count:
+                            break
+                worker_pool.add_poison_pills()
+                worker_pool.join_workers()
+        finally:
+            manager.close_session()

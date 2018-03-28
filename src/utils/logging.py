@@ -22,13 +22,27 @@
 ## SOFTWARE.
 
 import logging
-from os import fspath, path, getpid
+from os import path, getpid
 from collections import defaultdict
 
 def addProcessScopedHandler(filename, logger=logging.root, mode='a', encoding='UTF-8'):
     '''
-    Adds new stream to first ProcessAwareFileHandler encountered in logger.handlers
+    Args:
+        filename: String        => filename to add handler for
+        logger: logging.Logger  => logger to add handler to
+        mode: String            => file mode for new handler
+        encoding: String        => encoding to open new file with
+    Procedure:
+        Adds new stream to first ProcessAwareFileHandler encountered in logger.handlers
+    Preconditions:
+        filename is of type String
+        logger is subclass of logging.Logger    (assumed True)
+        mode is of type String
+        encoding is of type String
     '''
+    assert isinstance(filename, str), 'Filename is not of type String'
+    assert isinstance(mode, str), 'Mode is not of type String'
+    assert isinstance(encoding, str), 'Encoding is not of type String'
     for handler in logger.handlers:
         if isinstance(handler, ProcessAwareFileHandler):
             if handler.get_stream_config() is None:
@@ -45,8 +59,9 @@ class ProcessAwareFileHandler(logging.FileHandler):
     '''
 
     def __init__(self, filename, mode='a', encoding='UTF-8', delay=False):
-        # Issue #27493: add support for Path objects to be passed in
-        filename = fspath(filename)
+        #keep the absolute path, otherwise derived classes which use this
+        #may come a cropper when the current directory changes
+        filename = path.abspath(filename)
         logging.Handler.__init__(self)
         self.streams = defaultdict(dict)
         self.set_filename(path.abspath(filename))
@@ -58,11 +73,29 @@ class ProcessAwareFileHandler(logging.FileHandler):
             self._open()
     def _getpid(self, pid=None):
         '''
+        Args:
+            pid: Integer|String => process identifier (PID)
+        Returns:
+            String
+            Current PID
+        Preconditions:
+            pid is of type Integer or String
         '''
+        assert isinstance(pid, (int, str, type(None))), 'PID is not of type Integer or String'
         return str(getpid()) if pid is None else str(pid)
     def _get_stream_attribute(self, attribute, pid):
         '''
+        Args:
+            @self._getpid
+            attribute: String   => attribute of stream to receive
+        Returns:
+            Any
+            stream attribute of pid's stream
+        Preconditions:
+            @self._getpid
+            attribute is of type String
         '''
+        assert isinstance(attribute, str), 'Attribute is not of type String'
         self.acquire()
         try:
             return self.streams.get(self._getpid(pid), dict()).get(attribute)

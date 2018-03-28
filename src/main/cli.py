@@ -48,6 +48,15 @@ def DBConnectConfig(arg):
         raise ArgumentTypeError(str(e))
 
 def initialize_parser():
+    '''
+    Args:
+        N/A
+    Returns:
+        ArgumentParser
+        Command line argument parser
+    Preconditions:
+        N/A
+    '''
     ## Main parser
     main_parser = ArgumentParser(prog='amft.py', description='Windows NTFS $MFT file parser')
     main_parser.add_argument('-V', '--version', action='version', version='%(prog)s v0.0.1')
@@ -76,12 +85,12 @@ def initialize_parser():
     ## DB connect parent parser
     db_connect_parent = ArgumentParser(add_help=False)
     db_connect_parent.add_argument('-d', '--driver', type=str, default='sqlite', help='Database driver to use (default: sqlite)', dest='db_driver')
-    db_connect_parent.add_argument('-n', '--db', type=str, required=True, help='Name of database to connect to', dest='db_name')
+    db_connect_parent.add_argument('-n', '--db', type=str, required=True, help='Name of database to connect to (path to database if using sqlite)', dest='db_name')
     db_connect_parent.add_argument('-C', '--connect', type=DBConnectConfig, help='Database connection string, or filepath to file containing connection string', dest='db_conn_string')
     db_connect_parent.add_argument('-u', '--user', type=str, help='Name of database user (alternative to connection string)', dest='db_user')
     db_connect_parent.add_argument('-p', '--passwd', type=str, help='Database user password (alternative to connection string)', dest='db_passwd')
     db_connect_parent.add_argument('-H', '--host', type=str, default='localhost', help='Hostname or IP address of database (alternative to connection string)', dest='db_host')
-    db_connect_parent.add_argument('-P', '--port', type=str, help='Port database is listening on (alternative to connection string)', dest='db_host')
+    db_connect_parent.add_argument('-P', '--port', type=str, help='Port database is listening on (alternative to connection string)', dest='db_port')
 
     ## Parse directives
     parse_directive = main_directives.add_parser('parse', help='$MFT file parser directives')
@@ -89,7 +98,6 @@ def initialize_parser():
 
     # CSV parse directive
     csv_parse_directive = parse_subdirectives.add_parser('csv', parents=[base_parent, csv_output_parent], help='Parse $MFT file to csv')
-    #TODO: support idxroot and idxalloc (potentially together?)
     csv_parse_directive.add_argument('info_type', \
         type=str, \
         default='summary', \
@@ -108,6 +116,7 @@ def initialize_parser():
 
     # Database parse directive
     db_parse_directive = parse_subdirectives.add_parser('db', parents=[base_parent, db_connect_parent], help='Parse $MFT file to database')
+    db_parse_directive.set_defaults(func=DirectiveRegistry.retrieve('ParseDBDirective'))
 
     ## Convert directives
     convert_directives = main_directives.add_parser('convert', help='Parsed $MFT file output conversion directives')

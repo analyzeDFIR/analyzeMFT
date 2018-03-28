@@ -68,7 +68,7 @@ MFTIndexNodeHeader = Struct(
     'IndexValuesOffset'         / Int32ul,
     'IndexNodeSize'             / Int32ul,
     'AllocatedIndexNodeSize'    / Int32ul,
-    Embedded(MFTIndexNodeFlags)
+    'Flags'                     / MFTIndexNodeFlags
 )
 
 '''
