@@ -205,7 +205,6 @@ class BaseParseFileOutputDirective(BaseDirective):
                                 if remaining_count == 0:
                                     break
                                 worker_pool.add_task(mft_record, nodeidx, recordidx)
-                                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                                 recordidx += 1
                                 remaining_count -= 1
                     finally:
@@ -427,7 +426,7 @@ class ParseDBDirective(BaseDirective):
                 with tqdm(total=frontier_count, desc='Total', unit='files') as node_progress:
                     for nodeidx, node in enumerate(frontier):
                         Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
-                        mft_file = open(node, 'rb')
+                        mft_file = MFT(node)
                         try:
                             recordidx = 0
                             remaining_count = cls._get_remaining_count(node, record_count, args.count)
@@ -441,10 +440,10 @@ class ParseDBDirective(BaseDirective):
                                 )
                                 progress_pool.refresh()
                                 progress_pool.start()
-                                mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                                while mft_record != '' and remaining_count > 0:
+                                for mft_record in mft_file.entries:
+                                    if remaining_count == 0:
+                                        break
                                     worker_pool.add_task(mft_record, nodeidx, recordidx)
-                                    mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                                     recordidx += 1
                                     remaining_count -= 1
                         finally:

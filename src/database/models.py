@@ -158,39 +158,42 @@ class EntryHeader(BaseTable, ConcreteTableMixin, FileLedgerLinkedMixin):
     total_size                      = Column(Integer, nullable=False)
     used_size                       = Column(Integer, nullable=False)
     base_file_record_segment        = relationship('FileReference', uselist=False, backref='entry_header')
+    attributes                      = relationship('AttributeHeader', backref='entry_header')
 
 class AttributeHeader(BaseTable, ConcreteTableMixin, EntryHeaderLinkedMixin):
     '''
     $MFT entry attribute header table
     '''
-    type_code               = Column(String().with_variant(Text, 'postgresql'), nullable=False)
-    record_length           = Column(Integer, nullable=False)
-    name_length             = Column(Integer, nullable=False)
-    name_offset             = Column(Integer, nullable=False)
-    name                    = Column(String().with_variant(Text, 'postgresql'), nullable=False)
-    instance                = Column(Integer, nullable=False)
-    form_code               = Column(Integer, nullable=False)
-    index_flag              = Column(Integer, nullable=False)
-    value_length            = Column(Integer, nullable=False)
-    value_offset            = Column(Integer, nullable=False)
-    flag_compression_mask   = Column(Boolean)
-    flag_encrypted          = Column(Boolean)
-    flag_sparse             = Column(Boolean)
-    lowest_vcn              = Column(Integer)
-    highest_vcn             = Column(Integer)
-    mapping_pairs_offset    = Column(Integer)
-    compression_unit_size   = Column(Integer)
-    allocated_length        = Column(Integer)
-    file_size               = Column(Integer)
-    valid_data_length       = Column(Integer)
-    total_allocated         = Column(Integer)
-    standard_information    = relationship('StandardInformation', uselist=False, backref='header')
-    attribute_list          = relationship('AttributeListEntry', backref='header')
-    file_name               = relationship('FileName', uselist=False, backref='header')
-    object_id               = relationship('ObjectIdEntry', backref='header')
-    volume_name             = relationship('VolumeName', uselist=False, backref='header')
-    volume_information      = relationship('VolumeInformation', uselist=False, backref='header')
-    index_root              = relationship('IndexRoot', uselist=False, backref='header')
+    type_code                       = Column(String().with_variant(Text, 'postgresql'), nullable=False)
+    record_length                   = Column(Integer, nullable=False)
+    name_length                     = Column(Integer, nullable=False)
+    name_offset                     = Column(Integer, nullable=False)
+    name                            = Column(String().with_variant(Text, 'postgresql'), nullable=False)
+    instance                        = Column(Integer, nullable=False)
+    form_code                       = Column(Integer, nullable=False)
+    index_flag                      = Column(Integer, nullable=False)
+    value_length                    = Column(Integer, nullable=False)
+    value_offset                    = Column(Integer, nullable=False)
+    attribute_flag_compression_mask = Column(Boolean)
+    attribute_flag_encrypted        = Column(Boolean)
+    attribute_flag_sparse           = Column(Boolean)
+    lowest_vcn                      = Column(Integer)
+    highest_vcn                     = Column(Integer)
+    mapping_pairs_offset            = Column(Integer)
+    compression_unit_size           = Column(Integer)
+    allocated_length                = Column(Integer)
+    file_size                       = Column(Integer)
+    valid_data_length               = Column(Integer)
+    total_allocated                 = Column(BigInteger)
+    standard_information            = relationship('StandardInformation', uselist=False, backref='header')
+    attribute_list                  = relationship('AttributeListEntry', backref='header')
+    file_name                       = relationship('FileName', uselist=False, backref='header')
+    object_id                       = relationship('ObjectIdEntry', backref='header')
+    security_descriptor             = relationship('SecurityDescriptor', uselist=False, backref='header')
+    volume_name                     = relationship('VolumeName', uselist=False, backref='header')
+    volume_information              = relationship('VolumeInformation', uselist=False, backref='header')
+    data                            = relationship('Data', uselist=False, backref='header')
+    index_root                      = relationship('IndexRoot', uselist=False, backref='header')
 
 class StandardInformation(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
     '''
@@ -251,42 +254,42 @@ class SecurityDescriptor(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMix
     '''
     $MFT entry security descriptor table
     '''
-    revision                        = Column(Integer, nullable=False)
-    sbz1                            = Column(Integer, nullable=False)
-    owner_sid_offset                = Column(Integer, nullable=False)
-    group_sid_offset                = Column(Integer, nullable=False)
-    sacl_offset                     = Column(Integer, nullable=False)
-    dacl_offset                     = Column(Integer, nullable=False)
-    flag_se_dacl_auto_inherited     = Column(Boolean, nullable=False)
-    flag_se_dacl_auto_inherit_req   = Column(Boolean, nullable=False)
-    flag_se_dacl_defaulted          = Column(Boolean, nullable=False)
-    flag_se_dacl_present            = Column(Boolean, nullable=False)
-    flag_se_dacl_protected          = Column(Boolean, nullable=False)
-    flag_se_group_defaulted         = Column(Boolean, nullable=False)
-    flag_se_owner_defaulted         = Column(Boolean, nullable=False)
-    flag_se_rm_control_valid        = Column(Boolean, nullable=False)
-    flag_se_sacl_auto_inherited     = Column(Boolean, nullable=False)
-    flag_se_sacl_auto_inherit_req   = Column(Boolean, nullable=False)
-    flag_se_sacl_defaulted          = Column(Boolean, nullable=False)
-    flag_se_sacl_present            = Column(Boolean, nullable=False)
-    flag_se_sacl_protected          = Column(Boolean, nullable=False)
-    flag_se_self_relative           = Column(Boolean, nullable=False)
-    owner_sid                       = relationship(\
+    revision                    = Column(Integer, nullable=False)
+    sbz1                        = Column(Integer, nullable=False)
+    owner_sid_offset            = Column(Integer, nullable=False)
+    group_sid_offset            = Column(Integer, nullable=False)
+    sacl_offset                 = Column(Integer, nullable=False)
+    dacl_offset                 = Column(Integer, nullable=False)
+    se_dacl_auto_inherited      = Column(Boolean, nullable=False)
+    se_dacl_auto_inherit_req    = Column(Boolean, nullable=False)
+    se_dacl_defaulted           = Column(Boolean, nullable=False)
+    se_dacl_present             = Column(Boolean, nullable=False)
+    se_dacl_protected           = Column(Boolean, nullable=False)
+    se_group_defaulted          = Column(Boolean, nullable=False)
+    se_owner_defaulted          = Column(Boolean, nullable=False)
+    se_rm_control_valid         = Column(Boolean, nullable=False)
+    se_sacl_auto_inherited      = Column(Boolean, nullable=False)
+    se_sacl_auto_inherit_req    = Column(Boolean, nullable=False)
+    se_sacl_defaulted           = Column(Boolean, nullable=False)
+    se_sacl_present             = Column(Boolean, nullable=False)
+    se_sacl_protected           = Column(Boolean, nullable=False)
+    se_self_relative            = Column(Boolean, nullable=False)
+    owner_sid                   = relationship(\
         'SID', 
         uselist=False, 
         primaryjoin='and_(SecurityDescriptor.id == SID.security_descriptor_id, SID.tag == "owner")'\
     )
-    group_sid               = relationship(\
+    group_sid                   = relationship(\
         'SID', 
         uselist=False, 
         primaryjoin='and_(SecurityDescriptor.id == SID.security_descriptor_id, SID.tag == "group")'\
     )
-    sacl                    = relationship(\
+    sacl                        = relationship(\
         'AccessControlList',
         uselist=False,
         primaryjoin='and_(SecurityDescriptor.id == AccessControlList.security_descriptor_id, AccessControlList.tag == "system")'\
     )
-    dacl                    = relationship(\
+    dacl                        = relationship(\
         'AccessControlList',
         uselist=False,
         primaryjoin='and_(SecurityDescriptor.id == AccessControlList.security_descriptor_id, AccessControlList.tag == "discretionary")'\
@@ -307,28 +310,28 @@ class AccessControlEntry(BaseTable, ConcreteTableMixin):
     '''
     Access control list access control entry table
     '''
-    access_control_entry_id         = Column(BigInteger, ForeignKey('accesscontrolentry.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=True, index=True)
-    ace_size                        = Column(Integer, nullable=False)
-    ace_type                        = Column(Integer, nullable=False)
-    flag_container_inherit_ace      = Column(Boolean, nullable=False)
-    flag_inherit_only_ace           = Column(Boolean, nullable=False)
-    flag_no_propagate_inherit_ace   = Column(Boolean, nullable=False)
-    flag_object_inherit_ace         = Column(Boolean, nullable=False)
-    flag_failed_access_ace_flag     = Column(Boolean, nullable=False)
-    flag_successful_access_ace_flag = Column(Boolean, nullable=False)
-    flag_access_system_security     = Column(Boolean, nullable=False)
-    flag_generic_all                = Column(Boolean, nullable=False)
-    flag_generic_execute            = Column(Boolean, nullable=False)
-    flag_generic_read               = Column(Boolean, nullable=False)
-    flag_generic_write              = Column(Boolean, nullable=False)
-    flag_maximum_allowed            = Column(Boolean, nullable=False)
-    flag_delete                     = Column(Boolean, nullable=False)
-    flag_read_control               = Column(Boolean, nullable=False)
-    flag_synchronize                = Column(Boolean, nullable=False)
-    flag_write_dac                  = Column(Boolean, nullable=False)
-    flag_write_owner                = Column(Boolean, nullable=False)
-    standard_rights                 = Column(Integer, nullable=False)
-    trustee_sid                     = relationship('SID', uselist=False)
+    access_control_list_id     = Column(BigInteger, ForeignKey('accesscontrollist.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=True, index=True)
+    ace_size                   = Column(Integer, nullable=False)
+    ace_type                   = Column(Integer, nullable=False)
+    container_inherit_ace      = Column(Boolean, nullable=False)
+    inherit_only_ace           = Column(Boolean, nullable=False)
+    no_propagate_inherit_ace   = Column(Boolean, nullable=False)
+    object_inherit_ace         = Column(Boolean, nullable=False)
+    failed_access_ace_flag     = Column(Boolean, nullable=False)
+    successful_access_ace_flag = Column(Boolean, nullable=False)
+    access_system_security     = Column(Boolean, nullable=False)
+    generic_all                = Column(Boolean, nullable=False)
+    generic_execute            = Column(Boolean, nullable=False)
+    generic_read               = Column(Boolean, nullable=False)
+    generic_write              = Column(Boolean, nullable=False)
+    maximum_allowed            = Column(Boolean, nullable=False)
+    delete                     = Column(Boolean, nullable=False)
+    read_control               = Column(Boolean, nullable=False)
+    synchronize                = Column(Boolean, nullable=False)
+    write_dac                  = Column(Boolean, nullable=False)
+    write_owner                = Column(Boolean, nullable=False)
+    standard_rights            = Column(Integer, nullable=False)
+    trustee_sid                = relationship('SID', uselist=False)
 
 class VolumeName(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
     '''
@@ -342,13 +345,13 @@ class VolumeInformation(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixi
     '''
     major_version           = Column(Integer, nullable=False)
     minor_version           = Column(Integer, nullable=False)
-    flag_dirty              = Column(Boolean, nullable=False)
-    flag_resize_logifle     = Column(Boolean, nullable=False)
-    flag_mount_upgrade      = Column(Boolean, nullable=False)
-    flag_mount_nt4          = Column(Boolean, nullable=False)
-    flag_delete_usn         = Column(Boolean, nullable=False)
-    flag_objectid_repair    = Column(Boolean, nullable=False)
-    flag_chkdsk_modified    = Column(Boolean, nullable=False)
+    dirty                   = Column(Boolean, nullable=False)
+    resize_logifle          = Column(Boolean, nullable=False)
+    mount_upgrade           = Column(Boolean, nullable=False)
+    mount_nt4               = Column(Boolean, nullable=False)
+    delete_usn              = Column(Boolean, nullable=False)
+    objectid_repair         = Column(Boolean, nullable=False)
+    chkdsk_modified         = Column(Boolean, nullable=False)
 
 class IndexRoot(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
     '''
@@ -361,7 +364,7 @@ class IndexRoot(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
     index_entrys_offset                 = Column(Integer, nullable=False)
     index_node_size                     = Column(Integer, nullable=False)
     allocated_index_node_size           = Column(Integer, nullable=False)
-    flag_has_allocation_index           = Column(Boolean, nullable=False)
+    has_allocation_index                = Column(Boolean, nullable=False)
     entries                             = relationship('IndexEntry')
 
 class IndexEntry(BaseTable, ConcreteTableMixin):
@@ -371,8 +374,8 @@ class IndexEntry(BaseTable, ConcreteTableMixin):
     index_root_id           = Column(BigInteger, ForeignKey('indexroot.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=False, index=True)
     index_entry_size        = Column(Integer, nullable=False)
     index_key_data_size     = Column(Integer, nullable=False)
-    flag_has_sub_node       = Column(Boolean, nullable=False)
-    flag_is_last            = Column(Boolean, nullable=False)
+    has_sub_node            = Column(Boolean, nullable=False)
+    is_last                 = Column(Boolean, nullable=False)
     file_reference          = relationship('FileReference', uselist=False)
 
 class Data(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
@@ -427,6 +430,7 @@ class FileReference(BaseTable, ConcreteTableMixin):
     '''
     entry_header_id         = Column(BigInteger, ForeignKey('entryheader.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=True, index=True)
     file_name_id            = Column(BigInteger, ForeignKey('filename.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=True, index=True)
+    attribute_list_entry_id = Column(BigInteger, ForeignKey('attributelistentry.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=True, index=True)
     index_entry_id          = Column(BigInteger, ForeignKey('indexentry.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=True, index=True)
     segment_number          = Column(Integer, nullable=False)
     sequence_number         = Column(Integer, nullable=False)

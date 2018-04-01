@@ -30,6 +30,7 @@ from datetime import datetime, timezone, timedelta
 from json import dumps
 from construct.lib import Container
 
+import src.database.models as db
 from src.parsers.mft import MFTEntry
 
 class BaseParseTask(object):
@@ -364,6 +365,23 @@ class ParseDBTaskStage2(BaseParseTask):
     '''
     Class to push MFT entry information to database
     '''
+    @staticmethod
+    def _prepare_attribute_header(attribute):
+        '''
+        Args:
+            attribute: Container<String, Any>   => attribute to extract header from
+        Returns:
+            db.AttributeHeader
+            attribute header object
+        Preconditions:
+            attribute is of type Container  (assumed True)
+            attribute contains header field (assumed True)
+        '''
+        attribute_header = db.AttributeHeader().populate_fields(attribute.header)
+        attribute_header.populate_fields(attribute.header.Flags)
+        attribute_header.populate_fields(attribute.header.Form)
+        return attribute_header
+
     def extract_resultset(self, worker):
         '''
         @BaseParseTask.extract_resultset
@@ -371,19 +389,118 @@ class ParseDBTaskStage2(BaseParseTask):
         self.result_set = list()
         for mft_entry in self.source:
             try:
-                ledger = db.FileLedger().populate_fields(mft_entry.get_metadata())
+                fileledger = mft_entry.fileledger
+                base_file_record_segment = mft_entry.header.BaseFileRecordSegment
+                del mft_entry.fileledger
+                del mft_entry.header.BaseFileRecordSegment
+                entry_header = db.EntryHeader().populate_fields(mft_entry.header)
+                entry_header.populate_fields(mft_entry.header.MultiSectorHeader)
+                entry_header.populate_fields(mft_entry.header.Flags)
+                entry_header.meta_id = fileledger.id
             except Exception as e:
-                Logger.error('Failed to get metadata from %s (%s)'%(mft_entry._filepath, str(e)))
+                Logger.error('Failed to get header information from %s (%s)'%(mft_entry._filepath, str(e)))
             else:
-                try:
-                    ledger.header = db.Header().populate_fields(mft_entry.header)
-                except Exception as e:
-                    Logger.error('Failed to get header information from %s (%s)'%(mft_entry._filepath, str(e)))
-                else:
+                for standard_information in mft_entry.standard_information:
+                    try:
+                        attribute_header = self._prepare_attribute_header(standard_information)
+                        file_attribute_flags = standard_information.body.FileAttributeFlags
+                        del standard_information.body.file_attribute_flags
+                        standard_information = db.StandardInformation().populate_fields(standard_information.body)
+                        file_attribute_flags = db.FileAttributeFlags().populate_fields(file_attribute_flags)
+                        standard_information.file_attribute_flags = file_attribute_flags
+                        attribute_header.standard_information = standard_information
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add standard information attribute (%s)'%str(e))
+                for attribute_list in mft_entry.attribute_list:
+                    try:
+                        attribute_header = self.self._prepare_attribute_header(attribute_list)
+                        for attribute_list_entry in attribute_list.body:
+                            try:
+                                segment_reference = attribute_list_entry.SegmentReference
+                                del attribute_list_entry.SegmentReference
+                                attribute_list_entry = db.AttributeListEntry().populate_fields(attribute_list_entry)
+                                segment_reference = db.FileReference().populate_fields(segment_reference)
+                                attribute_list_entry.segment_reference = segment_reference
+                                attribute_header.attribute_list.append(attribute_list_entry)
+                            except Exception as e:
+                                Logger.error('Failed to add attribute list entry (%s)'%str(e))
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add attribute list attribute (%s)'%str(e))
+                for file_name in mft_entry.file_name:
+                    try:
+                        attribute_header = self._prepare_attribute_header(file_name)
+                        file_attribute_flags = file_name.body.FileAttributeFlags
+                        parent_directory = file_name.body.ParentDirectory
+                        del file_name.body.FileAttributeFlags
+                        del file_name.body.ParentDirectory
+                        file_name = db.FileName().populate_fields(file_name)
+                        file_attribute_flags = db.FileAttributeFlags().populate_fields(file_attribute_flags)
+                        parent_directory = db.FileReference().populate_fields(parent_directory)
+                        file_name.file_attribute_flags = file_attribute_flags
+                        file_name.parent_directory = parent_directory
+                        attribute_header.file_name = file_name
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add file name attribute (%s)'%str(e))
+                for object_id in mft_entry.object_id:
+                    #TODO
                     pass
-                    #ledger.complete = True
-                    #self.result_set.append(ledger)
-                    #Logger.info('Successfully constructed database object from %s'%pf._filepath)
+                for security_descriptor in mft_entry.security_descriptor:
+                    #TODO
+                    pass
+                for volume_name in mft_entry.volume_name:
+                    try:
+                        attribute_header = self.self._prepare_attribute_header(volume_name)
+                        if len(volume_name.body) > 0:
+                            volume_name = db.VolumeName(name=volume_name.body)
+                            attribute_header.volume_name = volume_name
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add volume name attribute (%s)'%str(e))
+                for volume_information in mft_entry.volume_information:
+                    try:
+                        attribute_header = self.self._prepare_attribute_header(volume_information)
+                        flags = volume_information.body.flags
+                        del volume_information.body.flags
+                        volume_information = db.VolumeInformation().populate_fields(volume_information.body)
+                        volume_information.populate_fields(flags)
+                        attribute_header.volume_information = volume_information
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add volume information attribute (%s)'%str(e))
+                for data in mft_entry.data:
+                    try:
+                        attribute_header = self.self._prepare_attribute_header(data)
+                        if 'body' in data and data.body is not None:
+                            data = db.Data().populate_fields(data.body)
+                            attribute_header.data = data
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add data attribute (%s)'%str(e))
+                for index_root in mft_entry.index_root:
+                    #TODO
+                    pass
+                for index_allocation in mft_entry.index_allocation:
+                    try:
+                        attribute_header = self.self._prepare_attribute_header(index_allocation)
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add index allocation attribute (%s)'%str(e))
+                for bitmap in mft_entry.bitmap:
+                    try:
+                        attribute_header = self.self._prepare_attribute_header(bitmap)
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add bitmap attribute (%s)'%str(e))
+                for logged_utility_stream in mft_entry.logged_utility_stream:
+                    try:
+                        attribute_header = self.self._prepare_attribute_header(logged_utility_stream)
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add logged utility stream attribute (%s)'%str(e))
+
     def process_resultset(self, worker):
         '''
         @BaseParseTask.process_resultset
@@ -412,11 +529,27 @@ class ParseDBTaskStage1(BaseParseFileOutputTask):
     Task class to parse single MFT entry in preparation for insertion into DB
     '''
 
-    def __init__(self, source, nodeidx, recordidx):
+    def __init__(self, source, nodeidx, recordidx, fileledger):
         super(BaseParseFileOutputTask, self).__init__(source)
         self._nodeidx = nodeidx
         self._recordidx = recordidx
         self._context = None
+        self._fileledger = fileledger
+    @property
+    def fileledger(self):
+        '''
+        @fileledger.getter
+        '''
+        return self._fileledger
+    @fileledger.setter
+    def fileledger(self, value):
+        '''
+        @fileledger.setter
+        Preconditions:
+            value is of type Container
+        '''
+        assert isinstance(value, Container)
+        self._fileledger = fileledger
     def extract_resultset(self, worker):
         '''
         @BaseParseTask.extract_resultset
@@ -426,6 +559,7 @@ class ParseDBTaskStage1(BaseParseFileOutputTask):
             mft_entry = MFTEntry(self.source)
             mft_entry.parse()
             mft_entry._stream = None
+            mft_entry.fileledger = self._fileledger
         except Exception as e:
             Logger.error('Failed to parse MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
         else:

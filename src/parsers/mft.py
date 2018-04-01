@@ -50,11 +50,10 @@ class MFTEntry(Container):
             'volume_name',
             'volume_information',
             'data',
-            'index_root',       
+            'index_root',
             'index_allocation',
             'bitmap',
-            'logged_utility_stream',
-            'data'\
+            'logged_utility_stream'\
         ]:
             self[attribute] = list()
         self._raw_entry = raw_entry
