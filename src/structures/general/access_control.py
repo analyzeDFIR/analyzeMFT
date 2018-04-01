@@ -23,10 +23,12 @@
 
 from construct import *
 
+from .sid import NTFSSID
+
 '''
-MFT ACE Acess Mask Standard Rights: standard access rights 
+NTFS ACE Acess Mask Standard Rights: standard access rights 
 '''
-MFTACEAccessMaskStandardRights = FlagsEnum(Int8ul,
+NTFSACEAccessMaskStandardRights = FlagsEnum(Int8ul,
     DELETE                  = 0x00010000,
     READ_CONTROL            = 0x00020000,
     WRITE_DAC               = 0x00040000,
@@ -35,24 +37,41 @@ MFTACEAccessMaskStandardRights = FlagsEnum(Int8ul,
 )
 
 '''
-MFT ACE Access Mask: access control entry permissions flags
+NTFS ACE Access Mask: access control entry permissions flags
 '''
-MFTACEAcessMask = Struct(
-    'SpecificRights'        / Int16ul,
-    'StandardRights'        / MFTACEAccessMaskStandardRights,
-    'ACCESS_SYSTEM_SECURITY'    / Bitwise(Flag),
-    'MAXIMUM_ALLOWED'       / Bitwise(Flag),
+NTFSACEAcessMask = Bitwise(Struct(
+    'SpecificRights'            / Bytewise(Int16ul),
+    'StandardRights'            / Bytewise(NTFSACEAccessMaskStandardRights),
+    'ACCESS_SYSTEM_SECURITY'    / Flag,
+    'MAXIMUM_ALLOWED'           / Flag,
     Padding(2),
-    'GENERIC_ALL'           / Bitwise(Flag),
-    'GENERIC_EXECUTE'       / Bitwise(Flag),
-    'GENERIC_WRITE'         / Bitwise(Flag),
-    'GENERIC_READ'          / Bitwise(Flag)
-)
+    'GENERIC_ALL'               / Flag,
+    'GENERIC_EXECUTE'           / Flag,
+    'GENERIC_WRITE'             / Flag,
+    'GENERIC_READ'              / Flag
+))
+
+# TODO: figure out Object ACE flags (determines Object ACE structure)
+#'''
+#NTFS Object ACE
+#'''
+#NTFSObjectACE = Struct(
+#    'AccessMask'            / NTFSACEAccessMask,
+#    'Flags'                 / FlagsEnum()
+#)
+#
+#'''
+#NTFS Basic ACE
+#'''
+#NTFSBasicACE = Struct(
+#    'AccessMask'            / NTFSACEAccessMask,
+#    'TrusteeSID'            / NTFSSID
+#)
 
 '''
-MFT ACE Type: access control entry type
+NTFS ACE Type: access control entry type
 '''
-MFTACEType = Enum(Int8ul, 
+NTFSACEType = Enum(Int8ul, 
     ACCESS_ALLOWED_ACE_TYPE                 = 0x00,
     ACCESS_DENIED_ACE_TYPE                  = 0x01,
     SYSTEM_AUDIT_ACE_TYPE                   = 0x02,
@@ -74,7 +93,7 @@ MFTACEType = Enum(Int8ul,
 )
 
 '''
-MFT ACE Flags: access control entry header flags
+NTFS ACE Flags: access control entry header flags
     OBJECT_INHERIT_ACE: Noncontainer child objects inherit 
                         the ACE as an effective ACE.
     CONTAINER_INHERIT_ACE: Child objects that are containers, 
@@ -96,7 +115,7 @@ MFT ACE Flags: access control entry header flags
     FAILED_ACCESS_ACE_FLAG: Used with system-audit ACEs in a system access control 
                             list (SACL) to generate audit messages for failed access attempts.
 '''
-MFTACEFlags = FlagsEnum(Int8ul,
+NTFSACEFlags = FlagsEnum(Int8ul,
     OBJECT_INHERIT_ACE          = 0x01,
     CONTAINER_INHERIT_ACE       = 0x02,
     NO_PROPAGATE_INHERIT_ACE    = 0x04,
@@ -106,24 +125,24 @@ MFTACEFlags = FlagsEnum(Int8ul,
 )
 
 '''
-MFT ACE Header: access control list entry
-    AceType: the ACE type (see: MFTACEType)
-    AceFlags: the ACE flags (see: MFTACEFlags)
+NTFS ACE Header: access control list entry
+    AceType: the ACE type (see: NTFSACEType)
+    AceFlags: the ACE flags (see: NTFSACEFlags)
     AceSize: the size of the ACE in bytes
 '''
-MFTACEHeader = Struct(
-    'AceType'               / MFTACEType,
-    'AceFlags'              / MFTACEFlags,
+NTFSACEHeader = Struct(
+    'AceType'               / NTFSACEType,
+    'AceFlags'              / NTFSACEFlags,
     'AceSize'               / Int16ul
 )
 
 '''
-MFT ACL Header: access control list header
+NTFS ACL Header: access control list header
     AclRevision: the ACL revision number
     AclSize: The total size of the ACL in bytes, including the ACL header and all ACEs
     AceCount: The number of ACEs stored in the ACL
 '''
-MFTACLHeader = Struct(
+NTFSACLHeader = Struct(
     'AclRevision'           / Int8ul,
     Padding(1),
     'AclSize'               / Int16ul,

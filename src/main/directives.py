@@ -32,10 +32,11 @@ from tqdm import tqdm
 
 from src.utils.config import initialize_logger, synthesize_log_path
 from src.utils.registry import RegistryMetaclassMixin 
+from src.parsers.mft import MFT
 import src.utils.parallel as parallel
 import src.main.tasks as tasks
 from src.database.manager import DBManager
-from src.database.models import BaseTable
+from src.database.models import BaseTable, FileLedger
 
 class DirectiveRegistry(RegistryMetaclassMixin, type):
     '''
@@ -188,7 +189,7 @@ class BaseParseFileOutputDirective(BaseDirective):
             with tqdm(total=frontier_count, desc='Total', unit='files') as node_progress:
                 for nodeidx, node in enumerate(frontier):
                     Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
-                    mft_file = open(node, 'rb')
+                    mft_file = MFT(node)
                     try:
                         recordidx = 0
                         remaining_count = cls._get_remaining_count(node, record_count, args.count)
@@ -200,8 +201,9 @@ class BaseParseFileOutputDirective(BaseDirective):
                             )
                             progress_pool.refresh()
                             progress_pool.start()
-                            mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
-                            while mft_record != '' and remaining_count > 0:
+                            for mft_record in mft_file.entries:
+                                if remaining_count == 0:
+                                    break
                                 worker_pool.add_task(mft_record, nodeidx, recordidx)
                                 mft_record = mft_file.read(cls.MFT_RECORD_SIZE)
                                 recordidx += 1

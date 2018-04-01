@@ -25,22 +25,28 @@ from construct import *
 from .general import NTFSFileReference
 
 '''
-MFTIndexValueFlags
-'''
-MFTIndexValueFlags = FlagsEnum(Int32ul,
-    HAS_SUB_NODE    = 0x00000001,
-    IS_LAST         = 0x00000002
-)
-
-'''
 MFTIndexValue
 '''
-MFTIndexValue = Struct(
+MFTIndexEntry = Struct(
     'FileReference'     / NTFSFileReference,
     'IndexValueSize'    / Int16ul,
     'IndexKeyDataSize'  / Int16ul,
-    'Flags'             / MFTIndexValueFlags
-    #TODO: index key and value data
+    'Flags'             / FlagsEnum(Int32ul,
+        HAS_SUB_NODE    = 0x00000001,
+        IS_LAST         = 0x00000002\
+    )
+)
+
+'''
+MFTIndexNodeHeader
+'''
+MFTIndexNodeHeader = Struct(
+    'IndexValuesOffset'         / Int32ul,
+    'IndexNodeSize'             / Int32ul,
+    'AllocatedIndexNodeSize'    / Int32ul,
+    'Flags'                     / FlagsEnum(Int32ul,
+        HasIndexAllocation = 0x00000001\
+    )
 )
 
 '''
@@ -52,23 +58,6 @@ MFTIndexEntryHeader = Struct(
     'FixupValuesCount'      / Int16ul,
     'LogFileSequenceNumber' / Int64ul,
     'VirtualClusterNumber'  / Int64ul
-)
-
-'''
-MFTIndexNodeFlags
-'''
-MFTIndexNodeFlags = FlagsEnum(Int32ul,
-    HasIndexAllocation      = 0x00000001
-)
-
-'''
-MFTIndexNodeHeader
-'''
-MFTIndexNodeHeader = Struct(
-    'IndexValuesOffset'         / Int32ul,
-    'IndexNodeSize'             / Int32ul,
-    'AllocatedIndexNodeSize'    / Int32ul,
-    'Flags'                     / MFTIndexNodeFlags
 )
 
 '''
@@ -88,8 +77,8 @@ MFTIndexRootCollationType = Enum(Int32ul,
 MFTIndexRootHeader
 '''
 MFTIndexRootHeader = Struct(
-    'AttributeType'     / Int32ul,
-    'CollationType'     / MFTIndexRootCollationType,
-    'EntrySize'         / Int32ul,
-    'ClusterBlockCount' / Int32ul
+    'AttributeType'                 / Int32ul,
+    'CollationType'                 / MFTIndexRootCollationType,
+    'IndexAllocationEntrySize'      / Int32ul,
+    'IndexRecordClusterBlockCount'  / Int32ul
 )

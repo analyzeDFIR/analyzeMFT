@@ -87,6 +87,27 @@ MFTEntryMultiSectorHeader = Struct(
 )
 
 '''
+MFT Attribute Header: header for MFT entry attribute
+'''
+MFTAttributeHeader = Struct(
+    'TypeCode'              / MFTAttributeTypeCode,
+    'RecordLength'          / Int32ul,
+    'FormCode'              / Int8ul,
+    'NameLength'            / Int8ul,
+    'NameOffset'            / Int16ul,
+    'Flags'                 / FlagsEnum(Int16ul,
+        ATTRIBUTE_FLAG_COMPRESSION_MASK = 0x00FF,
+        ATTRIBUTE_FLAG_ENCRYPTED        = 0x4000,
+        ATTRIBUTE_FLAG_SPARSE           = 0x8000),
+    'Instance'              / Int16ul,
+    'Form'                  / IfThenElse(
+        this.FormCode == 0,
+        'Resident'          / MFTResidentAttributeData,
+        'NonResident'       / MFTNonResidentAttributeData
+    )
+)
+
+'''
 MFT Entry Header: header structure for MFT entry
     MultiSectorHeader:          see MFTEntryMultiSectorHeader
     LogFileSequenceNumber:      $LogFile sequence number
@@ -118,22 +139,4 @@ MFTEntryHeader = Struct(
     'FirstAttributeId'      / Int16ul,
     Padding(2),
     'MFTRecordNumber'       / Int32ul
-)
-
-'''
-MFT Attribute Header: header for MFT entry attribute
-'''
-MFTAttributeHeader = Struct(
-    'TypeCode'              / MFTAttributeTypeCode,
-    'RecordLength'          / Int32ul,
-    'FormCode'              / Int8ul,
-    'NameLength'            / Int8ul,
-    'NameOffset'            / Int16ul,
-    'Flags'                 / Int16ul,
-    'Instance'              / Int16ul,
-    'Form'                  / IfThenElse(
-        this.FormCode == 0,
-        'Resident'          / MFTResidentAttributeData,
-        'NonResident'       / MFTNonResidentAttributeData
-    )
 )

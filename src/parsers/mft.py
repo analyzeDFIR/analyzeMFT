@@ -23,6 +23,7 @@
 
 import logging
 Logger = logging.getLogger(__name__)
+from os import path
 from io import BytesIO
 import inspect
 from construct.lib import Container
@@ -50,7 +51,10 @@ class MFTEntry(Container):
             'volume_information',
             'data',
             'index_root',       
-            'index_allocation'\
+            'index_allocation',
+            'bitmap',
+            'logged_utility_stream',
+            'data'\
         ]:
             self[attribute] = list()
         self._raw_entry = raw_entry
@@ -84,6 +88,8 @@ class MFTEntry(Container):
             return list(map(lambda entry: self._clean_transform(entry, serialize), value))
         elif isinstance(value, datetime) and serialize:
             return value.strftime('%Y-%m-%d %H:%M:%S.%f%z')
+        elif isinstance(value, (bytes, bytearray)):
+            return value.decode('UTF8', errors='replace')
         else:
             return value
     def _prepare_kwargs(self, structure_parser, **kwargs):
@@ -127,21 +133,62 @@ class MFTEntry(Container):
                     None\
                 )
         return prepared_kwargs
-    def _parse_index_allocation(self, original_position, attribute_header, stream=None):
-        '''
-        '''
-        #TODO
-        return None
     def _parse_index_root(self, original_position, attribute_header, stream=None):
         '''
+        Args:
+            original_position: Integer                  => position in stream before parsing this structure
+            attribute_header: Container<String, Any>    => header of this attribute
+            stream: TextIOWrapper|BytesIO               => stream to parse structure from
+        Returns:
+            Container<String, Any>
+            MFT entry index root attribute (see: src.structures.index)
+        Preconditions:
+            original_position is of type Integer                (assumed True)
+            attribute_header is of type Container<String, Any>  (assumed True)
+            stream is of type TextIOWrapper or BytesIO          (assumed True)
         '''
-        #TODO
-        return None
+        index_root = Container()
+        index_root.root_header = mftstructs.MFTIndexRootHeader.parse_stream(stream)
+        node_header_position = stream.tell()
+        index_root.node_header = mftstructs.MFTIndexNodeHeader.parse_stream(stream)
+        index_root.entries = list()
+        stream.seek(node_header_position + index_root.node_header.IndexValuesOffset)
+        index_entry_start_position = stream.tell()
+        index_entry_size = index_root.node_header.IndexNodeSize - mftstructs.MFTIndexNodeHeader.sizeof()
+        while (stream.tell() - index_entry_start_position) < index_entry_size:
+            try:
+                index_entry_position = stream.tell()
+                index_entry = mftstructs.MFTIndexEntry.parse_stream(stream)
+                seek_length = mftstructs.MFTIndexEntry.sizeof() + \
+                    index_entry.IndexValueSize + \
+                    index_entry.IndexKeyDataSize
+                if index_entry.Flags.HAS_SUB_NODE:
+                    seek_length += 8
+                index_root.entries.append(index_entry)
+                if index_entry.Flags.IS_LAST:
+                    break
+                else:
+                    stream.seek(index_entry_position + seek_length)
+            except:
+                break
+        return self._clean_transform(index_root)
     def _parse_data(self, original_position, attribute_header, stream=None):
         '''
+        Args:
+            original_position: Integer                  => position in stream before parsing this structure
+            attribute_header: Container<String, Any>    => header of this attribute
+            stream: TextIOWrapper|BytesIO               => stream to parse structure from
+        Returns:
+            Container<String, Any>
+            MFT entry resident data attribute
+        Preconditions:
+            original_position is of type Integer                (assumed True)
+            attribute_header is of type Container<String, Any>  (assumed True)
+            stream is of type TextIOWrapper or BytesIO          (assumed True)
         '''
-        #TODO
-        return None
+        data = Container(content=stream.read(attribute_header.RecordLength))
+        data.sha2hash = hashlib.sha256(data.content).hexdigest()
+        return data
     def _parse_volume_information(self, original_position, attribute_header, stream=None):
         '''
         Args:
@@ -188,16 +235,16 @@ class MFTEntry(Container):
         '''
         try:
             acl = Container()
-            acl.header = mftstructs.MFTACLHeader.parse_stream(stream)
+            acl.header = mftstructs.NTFSACLHeader.parse_stream(stream)
             acl_position = stream.tell()
-            acl_size = acl.Header.AclSize - mftstructs.MFTACLHeader.sizeof()
+            acl_size = acl.header.AclSize - mftstructs.NTFSACLHeader.sizeof()
             acl.body = list()
             while (stream.tell() - acl_position) < acl_size:
                 ace_position = stream.tell()
                 try:
                     ace = Container()
-                    ace.header = mftstructs.MFTACEHeader.parse_stream(stream)
-                    ace.body = None
+                    ace.header = mftstructs.NTFSACEHeader.parse_stream(stream)
+                    ace.body = mftstructs.NTFSACEAcessMask.parse_stream(stream)
                     acl.body.append(ace)
                     stream.seek(ace_position + ace.header.AceSize)
                 except:
@@ -220,25 +267,31 @@ class MFTEntry(Container):
             stream is of type TextIOWrapper or BytesIO          (assumed True)
         '''
         header_position = stream.tell()
-        security_descriptor = Container(
-            Revision=None, 
-            Control=None, 
-            OwnerSID=None, 
-            GroupSID=None, 
-            SACL=None, 
-            DACL=None
+        security_descriptor = Container(\
+            header=None,
+            body=Container()\
         )
-        security_descriptor_header = mftstructs.MFTSecurityDescriptorHeader.parse_stream(stream)
-        security_descriptor['Revision'] = security_descriptor_header.Revision
-        security_descriptor['Control'] = dict(security_descriptor_header.Control)
-        stream.seek(header_position + security_descriptor_header.OwnerSIDOffset)
-        security_descriptor['OwnerSID'] = mftstructs.NTFSSID.parse_stream(stream)
-        stream.seek(header_position + security_descriptor_header.GroupSIDOffset)
-        security_descriptor['GroupSID'] = mftstructs.NTFSSID.parse_stream(stream)
-        stream.seek(header_position + security_descriptor_header.SACLOffset)
-        security_descriptor['SACL'] = self._parse_access_control_list(stream=stream)
-        stream.seek(header_position + security_descriptor_header.DACLOffset)
-        security_descriptor['DACL'] = self._parse_access_control_list(stream=stream)
+        security_descriptor.header = mftstructs.MFTSecurityDescriptorHeader.parse_stream(stream)
+        if security_descriptor.header.Control.SE_SELF_RELATIVE:
+            stream.seek(header_position + security_descriptor.header.OwnerSIDOffset)
+            security_descriptor.body.OwnerSID = mftstructs.NTFSSID.parse_stream(stream)
+            stream.seek(header_position + security_descriptor.header.GroupSIDOffset)
+            security_descriptor.body.GroupSID = mftstructs.NTFSSID.parse_stream(stream)
+            if security_descriptor.header.Control.SE_SACL_PRESENT:
+                stream.seek(header_position + security_descriptor.header.SACLOffset)
+                security_descriptor.body.SACL = self._parse_access_control_list(stream=stream)
+            else:
+                security_descriptor.body.SACL = None
+            if security_descriptor.header.Control.SE_DACL_PRESENT:
+                stream.seek(header_position + security_descriptor.header.DACLOffset)
+                security_descriptor.body.DACL = self._parse_access_control_list(stream=stream)
+            else:
+                security_descriptor.body.DACL = None
+        else:
+            security_descriptor.body.OwnerSID = None
+            security_descriptor.body.GroupSID = None
+            security_descriptor.body.SACL = None
+            security_descriptor.body.DACL = None
         return self._clean_transform(security_descriptor)
     def _parse_object_id(self, original_position, attribute_header, stream=None):
         '''
@@ -342,8 +395,9 @@ class MFTEntry(Container):
         if attribute_header.NameLength > 0:
             try:
                 stream.seek(original_position + attribute_header.NameOffset)
-                attribute_header.Name = stream.read(attribute_header.NameLength * 2.).decode('UTF16')
-            except:
+                attribute_header.Name = stream.read(attribute_header.NameLength * 2).decode('UTF16')
+            except Exception as e:
+                Logger.error('Failed to get name of attribute from header (%s)'%str(e))
                 attribute_header.Name = None
         else:
             attribute_header.Name = None
@@ -370,7 +424,7 @@ class MFTEntry(Container):
         next_attribute.header = self.parse_structure('attribute_header')
         try:
             if next_attribute.header.FormCode != 0:
-                return next_attribute.header.TypeCode, None
+                return next_attribute.header.TypeCode, self._clean_transform(next_attribute)
             stream.seek(original_position + next_attribute.header.Form.ValueOffset)
             next_attribute.body = self.parse_structure(next_attribute.header.TypeCode.lower(), next_attribute.header)
             return next_attribute.header.TypeCode, self._clean_transform(next_attribute)
@@ -439,18 +493,18 @@ class MFTEntry(Container):
             stream = self._stream
         structure_parser = getattr(self, '_parse_' + structure, None)
         if structure_parser is None:
-            Logger.exception('Structure %s is not a known structure'%structure)
+            Logger.error('Structure %s is not a known structure'%structure)
             return None
         try:
             prepared_kwargs = self._prepare_kwargs(structure_parser, **kwargs)
         except Exception as e:
-            Logger.exception('Failed to parse provided kwargs for structure %s (%s)'%(structure, str(e)))
+            Logger.error('Failed to parse provided kwargs for structure %s (%s)'%(structure, str(e)))
             return None
         original_position = stream.tell()
         try:
             return structure_parser(original_position, *args, stream=stream, **prepared_kwargs)
         except Exception as e:
-            Logger.exception('Failed to parse %s structure (%s)'%(structure, str(e)))
+            Logger.error('Failed to parse %s structure (%s)'%(structure, str(e)))
             return None
     def parse(self):
         '''
@@ -479,3 +533,80 @@ class MFTEntry(Container):
             if self._stream is not None:
                 self._stream.close()
                 self._stream = None
+
+class MFT(Container):
+    '''
+    Class for parsing Windows $MFT file
+    '''
+    def __init__(self, filepath):
+        super(MFT, self).__init__()
+        self._filepath = filepath
+        self._record_size = 1024
+    @property
+    def entries(self):
+        '''
+        @entries.getter
+        '''
+        if self._filepath is None:
+            return list()
+        mft_file = open(self._filepath, 'rb')
+        try:
+            mft_entry = mft_file.read(self._record_size)
+            while mft_entry != b'':
+                yield mft_entry
+                mft_entry = mft_file.read(self._record_size)
+        finally:
+            mft_file.close()
+            mft_file = None
+    @entries.setter
+    def entries(self, value):
+        '''
+        @entries.setter
+        Preconditions:
+            N/A
+        '''
+        raise AttributeError('entries is a dynamic attribute and cannot be set')
+    def get_metadata(self, simple_hash=True):
+        '''
+        Args:
+            simple_hash: Boolean    => whether to only collect SHA256 hash or
+                                       MD5 and SHA1 as well
+        Returns:
+            Container<String, Any>
+            Container of metadata about this $MFT file:
+                file_name: $MFT file name
+                file_path: full path on local system
+                file_size: size of file on local system
+                md5hash: MD5 hash of $MFT file
+                sha1hash: SHA1 hash of $MFT file
+                sha2hash: SHA256 hash of $MFT file
+                modify_time: last modification time of $MFT file on local system
+                access_time: last access time of $MFT file on local system
+                create_time: create time of $MFT file on local system
+        Preconditions:
+            simple_hash is of type Boolean
+        '''
+        assert isinstance(simple_hash, bool), 'Simple_hash is of type Boolean'
+        return Container(\
+            file_name=path.basename(self._filepath),
+            file_path=path.abspath(self._filepath),
+            file_size=path.getsize(self._filepath),
+            md5hash=self._hash_file('md5') if not simple_hash else None,
+            sha1hash=self._hash_file('sha1') if not simple_hash else None,
+            sha2hash=self._hash_file('sha256'),
+            modify_time=datetime.fromtimestamp(path.getmtime(self._filepath), tzlocal()).astimezone(tzutc()),
+            access_time=datetime.fromtimestamp(path.getatime(self._filepath), tzlocal()).astimezone(tzutc()),
+            create_time=datetime.fromtimestamp(path.getctime(self._filepath), tzlocal()).astimezone(tzutc())\
+        )
+    def parse(self):
+        '''
+        Args:
+            N/A
+        Returns:
+            Gen<MFTEntry>
+            Iterator over the mft entries in this $MFT
+        Preconditions:
+            N/A
+        '''
+        for entry in self.entries:
+            yield MFTEntry(entry)
