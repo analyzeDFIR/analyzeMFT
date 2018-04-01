@@ -541,6 +541,25 @@ class MFT(Container):
         super(MFT, self).__init__()
         self._filepath = filepath
         self._record_size = 1024
+    def _hash_file(self, algorithm):
+        '''
+        Args:
+            algorithm: String   => hash algorithm to use
+        Returns:
+            String
+            Hex digest of hash of prefetch file
+        Preconditions:
+            algorithm is of type String
+        '''
+        try:
+            hash = getattr(hashlib, algorithm)()
+        except Exception as e:
+            Logger.error('Unable to obtain %s hash of $MFT file (%s)'%(algorithm, str(e)))
+            return None
+        else:
+            for entry in self.entries:
+                hash.update(entry)
+            return hash.hexdigest()
     @property
     def entries(self):
         '''
