@@ -398,7 +398,7 @@ class ParseDBTaskStage2(BaseParseTask):
                 entry_header.populate_fields(mft_entry.header.Flags)
                 entry_header.meta_id = fileledger.id
             except Exception as e:
-                Logger.error('Failed to get header information from %s (%s)'%(mft_entry._filepath, str(e)))
+                Logger.error('Failed to get header information (%s)'%str(e))
             else:
                 for standard_information in mft_entry.standard_information:
                     try:
