@@ -244,11 +244,11 @@ class ObjectIdEntry(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
     $MFT entry object id attribute entry table
     '''
     title                   = Column(String().with_variant(Text, 'postgresql'), nullable=False)
-    group_1                 = Column(Integer, nullable=False)
-    group_2                 = Column(Integer, nullable=False)
-    group_3                 = Column(Integer, nullable=False)
-    group_4                 = Column(Integer, nullable=False)
-    group_5                 = Column(Integer, nullable=False)
+    group1                  = Column(Integer, nullable=False)
+    group2                  = Column(Integer, nullable=False)
+    group3                  = Column(Integer, nullable=False)
+    group4                  = Column(Integer, nullable=False)
+    group5                  = Column(Integer, nullable=False)
 
 class SecurityDescriptor(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
     '''
@@ -330,7 +330,7 @@ class AccessControlEntry(BaseTable, ConcreteTableMixin):
     synchronize                = Column(Boolean, nullable=False)
     write_dac                  = Column(Boolean, nullable=False)
     write_owner                = Column(Boolean, nullable=False)
-    standard_rights            = Column(Integer, nullable=False)
+    specific_rights            = Column(Integer, nullable=False)
     trustee_sid                = relationship('SID', uselist=False)
 
 class VolumeName(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
