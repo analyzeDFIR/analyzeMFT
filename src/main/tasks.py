@@ -32,6 +32,7 @@ from construct.lib import Container
 
 import src.database.models as db
 from src.parsers.mft import MFTEntry
+from src.structures.general.sid import sid_to_string
 
 class BaseParseTask(object):
     '''
@@ -361,7 +362,53 @@ class ParseJSONTask(BaseParseFileOutputTask):
             except Exception as e:
                 Logger.error('Failed to create JSON output records of MFT entry %d for node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
 
-class ParseDBTaskStage2(BaseParseTask):
+class ParseDBTaskStage1(BaseParseFileOutputTask):
+    '''
+    Task class to parse single MFT entry in preparation for insertion into DB
+    '''
+
+    def __init__(self, source, nodeidx, recordidx, fileledger):
+        super(ParseDBTaskStage1, self).__init__(source, nodeidx, recordidx, target=None)
+        self._context = None
+        self._fileledger = fileledger
+    @property
+    def fileledger(self):
+        '''
+        @fileledger.getter
+        '''
+        return self._fileledger
+    @fileledger.setter
+    def fileledger(self, value):
+        '''
+        @fileledger.setter
+        Preconditions:
+            value is of type Container
+        '''
+        assert isinstance(value, Container)
+        self._fileledger = fileledger
+    def extract_resultset(self, worker):
+        '''
+        @BaseParseTask.extract_resultset
+        '''
+        self.result_set = list()
+        try:
+            mft_entry = MFTEntry(self.source)
+            mft_entry.parse()
+            mft_entry._stream = None
+        except Exception as e:
+            Logger.error('Failed to parse MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+        else:
+            try:
+                self.result_set.append(ParseDBTaskStage2([mft_entry], self.nodeidx, self.recordidx, self.fileledger))
+            except Exception as e:
+                Logger.error('Failed to create DB output record for MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
+    def process_resultset(self, worker):
+        '''
+        @BaseParseTask.process_resultset
+        '''
+        return self.result_set
+
+class ParseDBTaskStage2(ParseDBTaskStage1):
     '''
     Class to push MFT entry information to database
     '''
@@ -389,14 +436,12 @@ class ParseDBTaskStage2(BaseParseTask):
         self.result_set = list()
         for mft_entry in self.source:
             try:
-                fileledger = mft_entry.fileledger
                 base_file_record_segment = mft_entry.header.BaseFileRecordSegment
-                del mft_entry.fileledger
                 del mft_entry.header.BaseFileRecordSegment
                 entry_header = db.EntryHeader().populate_fields(mft_entry.header)
                 entry_header.populate_fields(mft_entry.header.MultiSectorHeader)
                 entry_header.populate_fields(mft_entry.header.Flags)
-                entry_header.meta_id = fileledger.id
+                entry_header.meta_id = self.fileledger.id
             except Exception as e:
                 Logger.error('Failed to get header information (%s)'%str(e))
             else:
@@ -404,7 +449,7 @@ class ParseDBTaskStage2(BaseParseTask):
                     try:
                         attribute_header = self._prepare_attribute_header(standard_information)
                         file_attribute_flags = standard_information.body.FileAttributeFlags
-                        del standard_information.body.file_attribute_flags
+                        del standard_information.body.FileAttributeFlags
                         standard_information = db.StandardInformation().populate_fields(standard_information.body)
                         file_attribute_flags = db.FileAttributeFlags().populate_fields(file_attribute_flags)
                         standard_information.file_attribute_flags = file_attribute_flags
@@ -414,17 +459,18 @@ class ParseDBTaskStage2(BaseParseTask):
                         Logger.error('Failed to add standard information attribute (%s)'%str(e))
                 for attribute_list in mft_entry.attribute_list:
                     try:
-                        attribute_header = self.self._prepare_attribute_header(attribute_list)
-                        for attribute_list_entry in attribute_list.body:
-                            try:
-                                segment_reference = attribute_list_entry.SegmentReference
-                                del attribute_list_entry.SegmentReference
-                                attribute_list_entry = db.AttributeListEntry().populate_fields(attribute_list_entry)
-                                segment_reference = db.FileReference().populate_fields(segment_reference)
-                                attribute_list_entry.segment_reference = segment_reference
-                                attribute_header.attribute_list.append(attribute_list_entry)
-                            except Exception as e:
-                                Logger.error('Failed to add attribute list entry (%s)'%str(e))
+                        attribute_header = self._prepare_attribute_header(attribute_list)
+                        for attribute_type in attribute_list.body:
+                            for attribute_list_entry in attribute_list.body[attribute_type]:
+                                try:
+                                    segment_reference = attribute_list_entry.SegmentReference
+                                    del attribute_list_entry.SegmentReference
+                                    attribute_list_entry = db.AttributeListEntry().populate_fields(attribute_list_entry)
+                                    segment_reference = db.FileReference().populate_fields(segment_reference)
+                                    attribute_list_entry.segment_reference = segment_reference
+                                    attribute_header.attribute_list.append(attribute_list_entry)
+                                except Exception as e:
+                                    Logger.error('Failed to add attribute list entry (%s)'%str(e))
                         entry_header.attributes.append(attribute_header)
                     except Exception as e:
                         Logger.error('Failed to add attribute list attribute (%s)'%str(e))
@@ -435,7 +481,7 @@ class ParseDBTaskStage2(BaseParseTask):
                         parent_directory = file_name.body.ParentDirectory
                         del file_name.body.FileAttributeFlags
                         del file_name.body.ParentDirectory
-                        file_name = db.FileName().populate_fields(file_name)
+                        file_name = db.FileName().populate_fields(file_name.body)
                         file_attribute_flags = db.FileAttributeFlags().populate_fields(file_attribute_flags)
                         parent_directory = db.FileReference().populate_fields(parent_directory)
                         file_name.file_attribute_flags = file_attribute_flags
@@ -445,14 +491,71 @@ class ParseDBTaskStage2(BaseParseTask):
                     except Exception as e:
                         Logger.error('Failed to add file name attribute (%s)'%str(e))
                 for object_id in mft_entry.object_id:
-                    #TODO
-                    pass
+                    try:
+                        attribute_header = self._prepare_attribute_header(object_id)
+                        for title in object_id.body:
+                            try:
+                                object_id_entry = db.ObjectIdEntry().populate_fields(object_id.body[title])
+                                object_id_entry.title = title
+                                attribute_header.object_id.append(object_id_entry)
+                            except Exception as e:
+                                Logger.error('Failed to add object ID entry %s (%s)'%(title, str(e)))
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add object ID attribute (%s)'%str(e))
                 for security_descriptor in mft_entry.security_descriptor:
-                    #TODO
-                    pass
+                    try:
+                        attribute_header = self._prepare_attribute_header(security_descriptor)
+                        security_descriptor_header = security_descriptor.body.header
+                        owner_sid = security_descriptor.body.body.OwnerSID
+                        group_sid = security_descriptor.body.body.GroupSID
+                        sacl = security_descriptor.body.body.SACL
+                        dacl = security_descriptor.body.body.DACL
+                        security_descriptor = db.SecurityDescriptor().populate_fields(security_descriptor_header)
+                        security_descriptor.populate_fields(security_descriptor_header.Control)
+                        owner_sid = db.SID(\
+                            tag='owner',
+                            identifier=sid_to_string(owner_sid)\
+                        )
+                        security_descriptor.owner_sid = owner_sid
+                        group_sid = db.SID(\
+                            tag='group',
+                            identifier=sid_to_string(group_sid)\
+                        )
+                        security_descriptor.group_sid = group_sid
+                        if sacl is not None:
+                            entries = sacl.body
+                            sacl = db.AccessControlList(tag='system').populate_fields(sacl.header)
+                            for entry in entries:
+                                try:
+                                    access_control_entry = db.AccessControlEntry().populate_fields(entry.header)
+                                    access_control_entry.populate_fields(entry.header.AceFlags)
+                                    access_control_entry.populate_fields(entry.body)
+                                    access_control_entry.populate_fields(entry.body.StandardRights)
+                                    sacl.entries.append(access_control_entry)
+                                except Exception as e:
+                                    Logger.error('Failed to add access control list entry to SACL (%s)'%str(e))
+                            security_descriptor.sacl = sacl
+                        if dacl is not None:
+                            entries = dacl.body
+                            dacl = db.AccessControlList(tag='discretionary').populate_fields(dacl.header)
+                            for entry in entries:
+                                try:
+                                    access_control_entry = db.AccessControlEntry().populate_fields(entry.header)
+                                    access_control_entry.populate_fields(entry.header.AceFlags)
+                                    access_control_entry.populate_fields(entry.body)
+                                    access_control_entry.populate_fields(entry.body.StandardRights)
+                                    dacl.entries.append(access_control_entry)
+                                except Exception as e:
+                                    Logger.error('Failed to add access control list entry to DACL (%s)'%str(e))
+                            security_descriptor.dacl = dacl
+                        attribute_header.security_descriptor = security_descriptor
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add security descriptor attribute (%s)'%str(e))
                 for volume_name in mft_entry.volume_name:
                     try:
-                        attribute_header = self.self._prepare_attribute_header(volume_name)
+                        attribute_header = self._prepare_attribute_header(volume_name)
                         if len(volume_name.body) > 0:
                             volume_name = db.VolumeName(name=volume_name.body)
                             attribute_header.volume_name = volume_name
@@ -461,9 +564,9 @@ class ParseDBTaskStage2(BaseParseTask):
                         Logger.error('Failed to add volume name attribute (%s)'%str(e))
                 for volume_information in mft_entry.volume_information:
                     try:
-                        attribute_header = self.self._prepare_attribute_header(volume_information)
-                        flags = volume_information.body.flags
-                        del volume_information.body.flags
+                        attribute_header = self._prepare_attribute_header(volume_information)
+                        flags = volume_information.body.Flags
+                        del volume_information.body.Flags
                         volume_information = db.VolumeInformation().populate_fields(volume_information.body)
                         volume_information.populate_fields(flags)
                         attribute_header.volume_information = volume_information
@@ -472,7 +575,7 @@ class ParseDBTaskStage2(BaseParseTask):
                         Logger.error('Failed to add volume information attribute (%s)'%str(e))
                 for data in mft_entry.data:
                     try:
-                        attribute_header = self.self._prepare_attribute_header(data)
+                        attribute_header = self._prepare_attribute_header(data)
                         if 'body' in data and data.body is not None:
                             data = db.Data().populate_fields(data.body)
                             attribute_header.data = data
@@ -480,27 +583,48 @@ class ParseDBTaskStage2(BaseParseTask):
                     except Exception as e:
                         Logger.error('Failed to add data attribute (%s)'%str(e))
                 for index_root in mft_entry.index_root:
-                    #TODO
-                    pass
+                    try:
+                        attribute_header = self._prepare_attribute_header(index_root)
+                        root_header = index_root.body.root_header
+                        node_header = index_root.body.node_header
+                        entries = index_root.body.entries
+                        index_root = db.IndexRoot().populate_fields(root_header)
+                        index_root.populate_fields(node_header)
+                        index_root.populate_fields(node_header.Flags)
+                        for entry in entries:
+                            try:
+                                file_reference = entry.FileReference
+                                del entry.FileReference
+                                index_entry = db.IndexEntry().populate_fields(entry)
+                                index_entry.populate_fields(entry.Flags)
+                                file_reference = db.FileReference().populate_fields(file_reference)
+                                index_entry.file_reference = file_reference
+                                index_root.entries.append(index_entry)
+                            except Exception as e:
+                                Logger.error('Failed to add index entry (%s)'%str(e))
+                        attribute_header.index_root = index_root
+                        entry_header.attributes.append(attribute_header)
+                    except Exception as e:
+                        Logger.error('Failed to add index root attribute (%s)'%str(e))
                 for index_allocation in mft_entry.index_allocation:
                     try:
-                        attribute_header = self.self._prepare_attribute_header(index_allocation)
+                        attribute_header = self._prepare_attribute_header(index_allocation)
                         entry_header.attributes.append(attribute_header)
                     except Exception as e:
                         Logger.error('Failed to add index allocation attribute (%s)'%str(e))
                 for bitmap in mft_entry.bitmap:
                     try:
-                        attribute_header = self.self._prepare_attribute_header(bitmap)
+                        attribute_header = self._prepare_attribute_header(bitmap)
                         entry_header.attributes.append(attribute_header)
                     except Exception as e:
                         Logger.error('Failed to add bitmap attribute (%s)'%str(e))
                 for logged_utility_stream in mft_entry.logged_utility_stream:
                     try:
-                        attribute_header = self.self._prepare_attribute_header(logged_utility_stream)
+                        attribute_header = self._prepare_attribute_header(logged_utility_stream)
                         entry_header.attributes.append(attribute_header)
                     except Exception as e:
                         Logger.error('Failed to add logged utility stream attribute (%s)'%str(e))
-
+                self.result_set.append(entry_header)
     def process_resultset(self, worker):
         '''
         @BaseParseTask.process_resultset
@@ -523,52 +647,3 @@ class ParseDBTaskStage2(BaseParseTask):
         if successful_results > 0:
             Logger.info('Successfully committed %d result(s) to database'%successful_results)
         return [True]
-
-class ParseDBTaskStage1(BaseParseFileOutputTask):
-    '''
-    Task class to parse single MFT entry in preparation for insertion into DB
-    '''
-
-    def __init__(self, source, nodeidx, recordidx, fileledger):
-        super(BaseParseFileOutputTask, self).__init__(source)
-        self._nodeidx = nodeidx
-        self._recordidx = recordidx
-        self._context = None
-        self._fileledger = fileledger
-    @property
-    def fileledger(self):
-        '''
-        @fileledger.getter
-        '''
-        return self._fileledger
-    @fileledger.setter
-    def fileledger(self, value):
-        '''
-        @fileledger.setter
-        Preconditions:
-            value is of type Container
-        '''
-        assert isinstance(value, Container)
-        self._fileledger = fileledger
-    def extract_resultset(self, worker):
-        '''
-        @BaseParseTask.extract_resultset
-        '''
-        self.result_set = list()
-        try:
-            mft_entry = MFTEntry(self.source)
-            mft_entry.parse()
-            mft_entry._stream = None
-            mft_entry.fileledger = self._fileledger
-        except Exception as e:
-            Logger.error('Failed to parse MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
-        else:
-            try:
-                self.result_set.append(ParseDBTaskStage2([mft_entry]))
-            except Exception as e:
-                Logger.error('Failed to create DB output record for MFT entry %d from node %d (%s)'%(self.recordidx, self.nodeidx, str(e)))
-    def process_resultset(self, worker):
-        '''
-        @BaseParseTask.process_resultset
-        '''
-        return self.result_set

@@ -87,7 +87,7 @@ class MFTEntry(Container):
             return list(map(lambda entry: self._clean_transform(entry, serialize), value))
         elif isinstance(value, datetime) and serialize:
             return value.strftime('%Y-%m-%d %H:%M:%S.%f%z')
-        elif isinstance(value, (bytes, bytearray)):
+        elif isinstance(value, (bytes, bytearray)) and serialize:
             return value.decode('UTF8', errors='replace')
         else:
             return value
@@ -132,6 +132,36 @@ class MFTEntry(Container):
                     None\
                 )
         return prepared_kwargs
+    def _parse_logged_utility_stream(self, original_position, attribute_header, stream=None):
+        '''
+        Args:
+            original_position: Integer                  => position in stream before parsing this structure
+            attribute_header: Container<String, Any>    => header of this attribute
+            stream: TextIOWrapper|BytesIO               => stream to parse structure from
+        Returns:
+            Container<String, Any>
+            MFT entry resident data attribute
+        Preconditions:
+            original_position is of type Integer                (assumed True)
+            attribute_header is of type Container<String, Any>  (assumed True)
+            stream is of type TextIOWrapper or BytesIO          (assumed True)
+        '''
+        return None
+    def _parse_bitmap(self, original_position, attribute_header, stream=None):
+        '''
+        Args:
+            original_position: Integer                  => position in stream before parsing this structure
+            attribute_header: Container<String, Any>    => header of this attribute
+            stream: TextIOWrapper|BytesIO               => stream to parse structure from
+        Returns:
+            Container<String, Any>
+            MFT entry resident data attribute
+        Preconditions:
+            original_position is of type Integer                (assumed True)
+            attribute_header is of type Container<String, Any>  (assumed True)
+            stream is of type TextIOWrapper or BytesIO          (assumed True)
+        '''
+        return None
     def _parse_index_root(self, original_position, attribute_header, stream=None):
         '''
         Args:

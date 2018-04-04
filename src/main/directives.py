@@ -29,6 +29,7 @@ from glob import glob
 from argparse import Namespace
 from time import sleep
 from tqdm import tqdm
+from construct.lib import Container
 
 from src.utils.config import initialize_logger, synthesize_log_path
 from src.utils.registry import RegistryMetaclassMixin 
@@ -36,7 +37,7 @@ from src.parsers.mft import MFT
 import src.utils.parallel as parallel
 import src.main.tasks as tasks
 from src.database.manager import DBManager
-from src.database.models import BaseTable, FileLedger
+import src.database.models as db
 
 class DirectiveRegistry(RegistryMetaclassMixin, type):
     '''
@@ -209,7 +210,6 @@ class BaseParseFileOutputDirective(BaseDirective):
                                 remaining_count -= 1
                     finally:
                         record_count += (recordidx + 1)
-                        mft_file.close()
                     worker_pool.join_tasks()
                     progress_pool.join_tasks()
                     progress_pool.add_poison_pills()
@@ -394,7 +394,7 @@ class ParseDBDirective(BaseDirective):
                 3) args.db_user, args.db_passwd, args.db_host, and args.db_port are not None
         '''
         conn_string = cls._prepare_conn_string(args)
-        manager = DBManager(conn_string=conn_string, metadata=BaseTable.metadata)
+        manager = DBManager(conn_string=conn_string, metadata=db.BaseTable.metadata)
         try:
             manager.initialize(bootstrap=True)
         except Exception as e:
@@ -431,24 +431,50 @@ class ParseDBDirective(BaseDirective):
                             recordidx = 0
                             remaining_count = cls._get_remaining_count(node, record_count, args.count)
                             if remaining_count > 0:
-                                progress_pool.worker_kwargs = dict(\
-                                    log_path=log_path,
-                                    pcount=remaining_count,
-                                    pdesc='%d. %s'%(nodeidx, path.basename(node)),
-                                    punit='records',
-                                    manager=manager\
-                                )
-                                progress_pool.refresh()
-                                progress_pool.start()
-                                for mft_record in mft_file.entries:
-                                    if remaining_count == 0:
-                                        break
-                                    worker_pool.add_task(mft_record, nodeidx, recordidx)
-                                    recordidx += 1
-                                    remaining_count -= 1
+                                try:
+                                    if manager.session is None:
+                                        try:
+                                            manager.create_session()
+                                        except Exception as e:
+                                            Logger.critical('Failed to establish database session (%s)'%str(e))
+                                            break
+                                    metadata = mft_file.get_metadata()
+                                    fileledger = manager.query(db.FileLedger, sha2hash=metadata.sha2hash).first()
+                                    if fileledger is not None:
+                                        for field in metadata:
+                                            metadata[field] = getattr(fileledger, field)
+                                        metadata.id = fileledger.id
+                                    else:
+                                        fileledger = db.FileLedger().populate_fields(metadata)
+                                        try:
+                                            manager.add(fileledger, commit=True)
+                                        except Exception as e:
+                                            Logger.error('Failed to add metadata for %s to database (%s)'%(node, str(e)))
+                                            continue
+                                        else:
+                                            metadata.id = fileledger.id
+                                except Exception as e:
+                                    Logger.error('Failed to get metadata for file %s (%s)'%(node, str(e)))
+                                    continue
+                                else:
+                                    manager.close_session()
+                                    progress_pool.worker_kwargs = dict(\
+                                        log_path=args.log_path,
+                                        pcount=remaining_count,
+                                        pdesc='%d. %s'%(nodeidx, path.basename(node)),
+                                        punit='records',
+                                        manager=manager\
+                                    )
+                                    progress_pool.refresh()
+                                    progress_pool.start()
+                                    for mft_record in mft_file.entries:
+                                        if remaining_count == 0:
+                                            break
+                                        worker_pool.add_task(mft_record, nodeidx, recordidx, metadata)
+                                        recordidx += 1
+                                        remaining_count -= 1
                         finally:
                             record_count += (recordidx + 1)
-                            mft_file.close()
                         worker_pool.join_tasks()
                         progress_pool.join_tasks()
                         progress_pool.add_poison_pills()

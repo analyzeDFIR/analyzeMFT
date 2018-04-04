@@ -168,12 +168,12 @@ class AttributeHeader(BaseTable, ConcreteTableMixin, EntryHeaderLinkedMixin):
     record_length                   = Column(Integer, nullable=False)
     name_length                     = Column(Integer, nullable=False)
     name_offset                     = Column(Integer, nullable=False)
-    name                            = Column(String().with_variant(Text, 'postgresql'), nullable=False)
+    name                            = Column(String().with_variant(Text, 'postgresql'))
     instance                        = Column(Integer, nullable=False)
     form_code                       = Column(Integer, nullable=False)
-    index_flag                      = Column(Integer, nullable=False)
-    value_length                    = Column(Integer, nullable=False)
-    value_offset                    = Column(Integer, nullable=False)
+    index_flag                      = Column(Integer)
+    value_length                    = Column(Integer)
+    value_offset                    = Column(Integer)
     attribute_flag_compression_mask = Column(Boolean)
     attribute_flag_encrypted        = Column(Boolean)
     attribute_flag_sparse           = Column(Boolean)
@@ -184,7 +184,7 @@ class AttributeHeader(BaseTable, ConcreteTableMixin, EntryHeaderLinkedMixin):
     allocated_length                = Column(Integer)
     file_size                       = Column(Integer)
     valid_data_length               = Column(Integer)
-    total_allocated                 = Column(BigInteger)
+    total_allocated                 = Column(Integer)
     standard_information            = relationship('StandardInformation', uselist=False, backref='header')
     attribute_list                  = relationship('AttributeListEntry', backref='header')
     file_name                       = relationship('FileName', uselist=False, backref='header')
@@ -346,7 +346,7 @@ class VolumeInformation(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixi
     major_version           = Column(Integer, nullable=False)
     minor_version           = Column(Integer, nullable=False)
     dirty                   = Column(Boolean, nullable=False)
-    resize_logifle          = Column(Boolean, nullable=False)
+    resize_logfile          = Column(Boolean, nullable=False)
     mount_upgrade           = Column(Boolean, nullable=False)
     mount_nt4               = Column(Boolean, nullable=False)
     delete_usn              = Column(Boolean, nullable=False)
@@ -359,12 +359,12 @@ class IndexRoot(BaseTable, ConcreteTableMixin, AttributeHeaderLinkedMixin):
     '''
     attribute_type                      = Column(Integer, nullable=False)
     collation_type                      = Column(Integer, nullable=False)
-    index_allocation_entry_size         = Column(Boolean, nullable=False)
-    index_record_cluster_block_count    = Column(Boolean, nullable=False)
-    index_entrys_offset                 = Column(Integer, nullable=False)
+    index_allocation_entry_size         = Column(Integer, nullable=False)
+    index_record_cluster_block_count    = Column(Integer, nullable=False)
+    index_values_offset                 = Column(Integer, nullable=False)
     index_node_size                     = Column(Integer, nullable=False)
     allocated_index_node_size           = Column(Integer, nullable=False)
-    has_allocation_index                = Column(Boolean, nullable=False)
+    has_index_allocation                = Column(Boolean, nullable=False)
     entries                             = relationship('IndexEntry')
 
 class IndexEntry(BaseTable, ConcreteTableMixin):
@@ -372,7 +372,7 @@ class IndexEntry(BaseTable, ConcreteTableMixin):
     Index entry value table
     '''
     index_root_id           = Column(BigInteger, ForeignKey('indexroot.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=False, index=True)
-    index_entry_size        = Column(Integer, nullable=False)
+    index_value_size        = Column(Integer, nullable=False)
     index_key_data_size     = Column(Integer, nullable=False)
     has_sub_node            = Column(Boolean, nullable=False)
     is_last                 = Column(Boolean, nullable=False)
@@ -435,5 +435,5 @@ class FileReference(BaseTable, ConcreteTableMixin):
     segment_number          = Column(Integer, nullable=False)
     sequence_number         = Column(Integer, nullable=False)
     __table_args__ = (\
-        CheckConstraint('entry_header_id IS NOT NULL OR file_name_id IS NOT NULL OR index_entry_id IS NOT NULL'),
+        CheckConstraint('entry_header_id IS NOT NULL OR file_name_id IS NOT NULL OR attribute_list_entry_id IS NOT NULL OR index_entry_id IS NOT NULL'),
     )

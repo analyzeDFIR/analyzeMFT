@@ -65,7 +65,7 @@ MFTNonResidentAttributeData = Struct(
     'AllocatedLength'       / Int64ul,
     'FileSize'              / Int64ul,
     'ValidDataLength'       / Int64ul,
-    'TotalAllocated'        / Optional(Int64ul)
+    'TotalAllocated'        / If(this.CompressionUnitSize > 0, Int64ul)
 )
 
 '''
