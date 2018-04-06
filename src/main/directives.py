@@ -214,16 +214,6 @@ class ParseDirectiveMixin(object):
             N/A
         '''
         raise NotImplementedError('method _should_parse not implemented for %s'%type(self).__name__)
-    def _parse_preamble(self):
-        '''
-        Args:
-            N/A
-        Procedure:
-            Perform any necessary pre-parsing setup (i.e. any modules that need to be configured)
-        Preconditions:
-            N/A
-        '''
-        raise NotImplementedError('method _parse_preamble not implemented for %s'%type(self).__name__)
     def _prepare_worker_pools(self):
         '''
         Args:
@@ -234,6 +224,16 @@ class ParseDirectiveMixin(object):
             N/A
         '''
         raise NotImplementedError('method _prepare_worker_pools not implemented for %s'%type(self).__name__)
+    def _parse_preamble(self):
+        '''
+        Args:
+            N/A
+        Procedure:
+            Perform any necessary pre-parsing setup (i.e. any modules that need to be configured)
+        Preconditions:
+            N/A
+        '''
+        raise NotImplementedError('method _parse_preamble not implemented for %s'%type(self).__name__)
     def _parse_loop(self):
         '''
         Args:
@@ -266,8 +266,8 @@ class ParseDirectiveMixin(object):
         self._prepare_args()
         self._prepare_frontier()
         if self._should_parse():
-            self._parse_preamble()
             self._prepare_worker_pools()
+            self._parse_preamble()
             self._parse_loop()
             self._parse_postamble()
 
@@ -330,11 +330,6 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
         @ParseDirectiveMixin._should_parse
         '''
         return len(self.frontier) > 0 and self.args.count > 0
-    def _parse_preamble(self):
-        '''
-        @ParseDirectiveMixin._parse_preamble
-        '''
-        tqdm.set_lock(parallel.RLock())
     def _get_task_kwargs(self):
         '''
         Args:
@@ -378,6 +373,11 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
             worker_kwargs=self._get_worker_kwargs(),
             task_kwargs=self._get_task_kwargs()\
         )
+    def _parse_preamble(self):
+        '''
+        @ParseDirectiveMixin._parse_preamble
+        '''
+        tqdm.set_lock(parallel.RLock())
     def _add_tasks(self, mft_record, nodeidx, recordidx):
         '''
         Args:
@@ -543,13 +543,6 @@ class ParseFILEDirective(BaseParseFileOutputDirective):
         assert len(self.args.target_name) > 0, 'Could not extract target filename from %s'%args.target
         self.args.target_parent = path.abspath(path.dirname(self.args.target))
         self.args.target = path.join(self.args.target_parent, self.args.target_name)
-    def _parse_preamble(self):
-        '''
-        @ParseDirectiveMixin._parse_preamble
-        '''
-        tqdm.set_lock(parallel.RLock())
-        for fmt in self.args.formats:
-            mkdir(path.join(self.args.target_parent, fmt))
     def _get_task_kwargs(self):
         '''
         @BaseParseFileOutputDirective._get_task_kwargs
@@ -560,6 +553,13 @@ class ParseFILEDirective(BaseParseFileOutputDirective):
         @BaseParseFileOutputDirective._get_worker_kwargs
         '''
         return dict(result_queue=self.pools.progress.queue, log_path=self.args.log_path)
+    def _parse_preamble(self):
+        '''
+        @ParseDirectiveMixin._parse_preamble
+        '''
+        tqdm.set_lock(parallel.RLock())
+        for fmt in self.args.formats:
+            mkdir(path.join(self.args.target_parent, fmt))
     def _add_tasks(self, mft_record, nodeidx, recordidx):
         '''
         @BaseParseFileOutputDirective._add_tasks
@@ -686,11 +686,6 @@ class ParseDBDirective(ParseDirectiveMixin, BaseDirective, DBConnectionMixin):
         @ParseDirectiveMixin._should_parse
         '''
         return len(self.frontier) > 0
-    def _parse_preamble(self):
-        '''
-        @ParseDirectiveMixin._parse_preamble
-        '''
-        tqdm.set_lock(parallel.RLock())
     def _prepare_worker_pools(self):
         '''
         @ParseDirectiveMixin._prepare_worker_pools
@@ -714,6 +709,11 @@ class ParseDBDirective(ParseDirectiveMixin, BaseDirective, DBConnectionMixin):
                 log_path=self.args.log_path\
             )
         )
+    def _parse_preamble(self):
+        '''
+        @ParseDirectiveMixin._parse_preamble
+        '''
+        tqdm.set_lock(parallel.RLock())
     def _parse_loop(self):
         '''
         @ParseDirectiveMixin._parse_loop
@@ -792,29 +792,22 @@ class ParseDBDirective(ParseDirectiveMixin, BaseDirective, DBConnectionMixin):
     def run(self):
         '''
         Args:
-            @BaseDirective.run_directive
-            args.db_driver: String      => database db_driver to use
-            args.db_name: String        => name of database to connect to
-            args.db_conn_string: String => database connection string
-            args.db_user: String        => name of database user
-            args.db_passwd: String      => password of database user
-            args.db_host: String        => hostname (IP address) of database
-            args.db_port: String        => port database is listening on
+            N/A
         Procedure:
             Parse $MFT information to database
         Preconditions:
             @BaseDirective.run_directive
-            args.db_driver is of type String
-            args.db_name is of type String
-            args.db_conn_string is of type String
-            args.db_user is of type String
-            args.db_passwd is of type String
-            args.db_host is of type String
-            args.db_port is of type String
+            self.args.db_driver is of type String
+            self.args.db_name is of type String
+            self.args.db_conn_string is of type String
+            self.args.db_user is of type String
+            self.args.db_passwd is of type String
+            self.args.db_host is of type String
+            self.args.db_port is of type String
             one of the following conditions must be true:
-                1) db_driver is sqlite and args.db_name is a valid path
-                2) args.db_conn_string is not None and is valid connection string 
-                3) args.db_user, args.db_passwd, args.db_host, and args.db_port are not None
+                1) self.args.db_driver is sqlite and self.args.db_name is a valid path
+                2) self.args.db_conn_string is not None and is valid connection string 
+                3) self.args.db_user, self.args.db_passwd, self.args.db_host, and self.args.db_port are not None
         '''
         super(ParseDBDirective, self).run()
 
@@ -825,19 +818,15 @@ class DBQueryDirective(BaseDirective, DBConnectionMixin):
     def run(self):
         '''
         Args:
-            @BaseDirective.run_directive
-            @ParseDBDirective.run (args.db_*)
-            @ParseCSVDirective.run (args.target, args.sep)
-            args.query: String  => database query to submit
-            args.title: String  => title of table
+            N/A
         Procedure:
             Query $MFT information from database
         Preconditions:
             @BaseDirective.run_directive
             @ParseDBDirective.run (args.db_*)
             @ParseCSVDirective.run (args.target, args.sep)
-            args.query is of type String
-            args.title is of type String
+            self.args.query is of type String
+            self.args.title is of type String
         '''
         assert isinstance(self.args.query, str), 'Query is not of type String'
         if self.args.target is not None:
@@ -862,9 +851,9 @@ class DBQueryDirective(BaseDirective, DBConnectionMixin):
                                 try:
                                     target.write(self.args.sep.join([str(item) for item in result]) + '\n')
                                 except Exception as e:
-                                    Logger.error('Failed to write result to output file %s (%s)'%(args.target, str(e)))
+                                    Logger.error('Failed to write result to output file %s (%s)'%(self.args.target, str(e)))
                     except Exception as e:
-                        Logger.error('Failed to write results to output file %s (%s)'%(args.target, str(e)))
+                        Logger.error('Failed to write results to output file %s (%s)'%(self.args.target, str(e)))
                 else:
                     if sys.stdout.isatty():
                         table_data = [headers]
@@ -872,11 +861,11 @@ class DBQueryDirective(BaseDirective, DBConnectionMixin):
                             table_data.append([str(item) for item in result])
                         table = AsciiTable(table_data)
                         if self.args.title:
-                            table.title = args.title
+                            table.title = self.args.title
                         print(table.table)
                     else:
-                        print(args.sep.join(headers))
+                        print(self.args.sep.join(headers))
                         for result in resultset:
-                            print(args.sep.join([str(item) for item in result]))
+                            print(self.args.sep.join([str(item) for item in result]))
             else:
-                Logger.info('No results found for query %s'%args.query)
+                Logger.info('No results found for query %s'%self.args.query)
