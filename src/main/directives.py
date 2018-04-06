@@ -70,8 +70,8 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
     MFT_RECORD_SIZE = 1024
 
     def __init__(self, args):
-        self.args = args
-        self.run_directive(args)
+        self._args = args
+        self.run_directive()
     @property
     def args(self):
         '''
@@ -166,7 +166,7 @@ class ParseDirectiveMixin(object):
         Preconditions:
             value is an iterable    (assumed True)
         '''
-        self._frontier = frontier
+        self._frontier = value
     @property
     def pools(self):
         '''
@@ -180,7 +180,7 @@ class ParseDirectiveMixin(object):
         Preconditions:
             value is (subclass of) dict (assumed True)
         '''
-        self._pools = pools
+        self._pools = value
     def _prepare_args(self):
         '''
         Args:
@@ -307,13 +307,17 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
     '''
     _TASK_CLASS = None
 
+    def __init__(self, args):
+        self._frontier = None
+        self._pools = None
+        super(BaseParseFileOutputDirective, self).__init__(args)
     def _prepare_args(self):
         '''
         @ParseDirectiveMixin._prepare_args
         '''
         assert path.isdir(path.dirname(self.args.target)), 'Target does not point to existing directory'
-        self.args.target = path.abspath(args.target)
-        self.args.target_parent = path.dirname(args.target)
+        self.args.target = path.abspath(self.args.target)
+        self.args.target_parent = path.dirname(self.args.target)
     def _prepare_frontier(self):
         '''
         @ParseDirectiveMixin._prepare_frontier
@@ -372,6 +376,20 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
             worker_kwargs=self._get_worker_kwargs(),
             task_kwargs=self._get_task_kwargs()\
         )
+    def _add_task(self, mft_record, nodeidx, recordidx):
+        '''
+        Args:
+            mft_record: ByteString  => MFT record to add to task
+            nodeidx: Integer        => index of node (MFT file) being parsed
+            recordidx: Integer      => index of MFT record being parsed
+        Procedure:
+            Add task(s) to parsing queue
+        Preconditions:
+            mft_record is of type ByteString    (assumed True)
+            nodeidx is of type Integer          (assumed True)
+            recordidx is of type Integer        (assumed True)
+        '''
+        self.pools.parser.add_task(mft_record, nodeidx, recordidx)
     def _parse_loop(self):
         '''
         @ParseDirectiveMixin._parse_loop
@@ -396,7 +414,7 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
                         for mft_record in mft_file.entries:
                             if remaining_count == 0:
                                 break
-                            self.pools.parser.add_task(mft_record, nodeidx, recordidx)
+                            self._add_task(mft_record, nodeidx, recordidx)
                             recordidx += 1
                             remaining_count -= 1
                 finally:
@@ -406,7 +424,7 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
                 self.pools.progress.add_poison_pills()
                 self.pools.progress.join_workers()
                 node_progress.update(1)
-                if record_count >= args.count:
+                if record_count >= self.args.count:
                     break
         self.pools.parser.add_poison_pills()
         self.pools.parser.join_workers()
@@ -431,7 +449,7 @@ class ParseCSVDirective(BaseParseFileOutputDirective):
         '''
         @BaseParseFileOutputDirective._get_worker_kwargs
         '''
-        return dict(result_queue=self.args.result_queue, log_path=self.args.log_path)
+        return dict(result_queue=self.pools.progress.queue, log_path=self.args.log_path)
     def run(self):
         '''
         Args:
@@ -458,12 +476,12 @@ class ParseBODYDirective(BaseParseFileOutputDirective):
         '''
         @BaseParseFileOutputDirective._get_task_kwargs
         '''
-        return dict(target=args.target_parent, sep=args.sep)
+        return dict(target=self.args.target_parent, sep=self.args.sep)
     def _get_worker_kwargs(self):
         '''
         @BaseParseFileOutputDirective._get_worker_kwargs
         '''
-        return dict(result_queue=args.result_queue, log_path=args.log_path)
+        return dict(result_queue=self.pools.progress.queue, log_path=self.args.log_path)
     def run(self):
         '''
         Args:
@@ -489,12 +507,12 @@ class ParseJSONDirective(BaseParseFileOutputDirective):
         '''
         @BaseParseFileOutputDirective._get_task_kwargs
         '''
-        return dict(target=args.target_parent, pretty=args.pretty if args.threads == 1 else False)
+        return dict(target=self.args.target_parent, pretty=self.args.pretty if self.args.threads == 1 else False)
     def _get_worker_kwargs(self):
         '''
         @BaseParseFileOutputDirective._get_worker_kwargs
         '''
-        return dict(result_queue=args.result_queue, log_path=args.log_path)
+        return dict(result_queue=self.pools.progress.queue, log_path=self.args.log_path)
     def run(self):
         '''
         Args:
@@ -524,10 +542,165 @@ class ParseFILEDirective(BaseParseFileOutputDirective):
         self.args.target_parent = path.abspath(path.dirname(self.args.target))
         self.args.target = path.join(self.args.target_parent, self.args.target_name)
 
-class ParseDBDirective(BaseDirective, DBConnectionMixin):
+class ParseDBDirective(ParseDirectiveMixin, BaseDirective, DBConnectionMixin):
     '''
     Directive for parsing $MFT file to DB format
     '''
+    def __init__(self, args):
+        self._frontier = None
+        self._pools = None
+        self._conn_string = None
+        self._manager = None
+        super(ParseDBDirective, self).__init__(args)
+    @property
+    def conn_string(self):
+        '''
+        @conn_string.getter
+        '''
+        return self._conn_string
+    @conn_string.setter
+    def conn_string(self, value):
+        '''
+        @conn_string.setter
+        Preconditions:
+            value is of type String
+        '''
+        assert isinstance(value, str), 'Value is not of type String'
+        self._conn_string = value
+    @property
+    def manager(self):
+        '''
+        @manager.getter
+        '''
+        return self._manager
+    @manager.setter
+    def manager(self, value):
+        '''
+        @manager.setter
+        Preconditions:
+            value is of type DBManager  (assumed True)
+        '''
+        self._manager = value
+    def _prepare_args(self):
+        '''
+        @ParseDirectiveMixin._prepare_args
+        '''
+        self.conn_string = self._prepare_conn_string(self.args)
+        self.manager = DBManager(conn_string=self.conn_string, metadata=db.BaseTable.metadata)
+        self.manager.initialize(bootstrap=True)
+    def _prepare_frontier(self):
+        '''
+        @ParseDirectiveMixin._prepare_frontier
+        '''
+        self.frontier = self._get_frontier(self.args.sources)
+    def _should_parse(self):
+        '''
+        @ParseDirectiveMixin._should_parse
+        '''
+        return len(self.frontier) > 0
+    def _parse_preamble(self):
+        '''
+        @ParseDirectiveMixin._parse_preamble
+        '''
+        tqdm.set_lock(parallel.RLock())
+    def _prepare_worker_pools(self):
+        '''
+        @ParseDirectiveMixin._prepare_worker_pools
+        '''
+        if self.pools is None:
+            self.pools = Container()
+        self.pools.progress = parallel.WorkerPool(\
+            parallel.JoinableQueue(-1), 
+            tasks.ParseDBTaskStage2,
+            daemonize=False, 
+            worker_class=parallel.DBProgressTrackerWorker,
+            worker_count=1\
+        )
+        self.pools.parser = parallel.WorkerPool(\
+            parallel.JoinableQueue(-1), 
+            tasks.ParseDBTaskStage1, 
+            daemonize=False, 
+            worker_count=self.args.threads,
+            worker_kwargs=dict(\
+                result_queue=self.pools.progress.queue, 
+                log_path=self.args.log_path\
+            )
+        )
+    def _parse_loop(self):
+        '''
+        @ParseDirectiveMixin._parse_loop
+        '''
+        try:
+            self.pools.parser.start()
+            record_count = 0
+            with tqdm(total=len(self.frontier), desc='Total', unit='files') as node_progress:
+                for nodeidx, node in enumerate(self.frontier):
+                    Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                    mft_file = MFT(node)
+                    try:
+                        recordidx = 0
+                        remaining_count = self._get_remaining_count(node, record_count, self.args.count)
+                        if remaining_count > 0:
+                            try:
+                                if self.manager.session is None:
+                                    try:
+                                        self.manager.create_session()
+                                    except Exception as e:
+                                        Logger.critical('Failed to establish database session (%s)'%str(e))
+                                        break
+                                metadata = mft_file.get_metadata()
+                                fileledger = self.manager.query(db.FileLedger, sha2hash=metadata.sha2hash).first()
+                                if fileledger is not None:
+                                    for field in metadata:
+                                        metadata[field] = getattr(fileledger, field)
+                                    metadata.id = fileledger.id
+                                else:
+                                    fileledger = db.FileLedger().populate_fields(metadata)
+                                    try:
+                                        self.manager.add(fileledger, commit=True)
+                                    except Exception as e:
+                                        Logger.error('Failed to add metadata for %s to database (%s)'%(node, str(e)))
+                                        continue
+                                    else:
+                                        metadata.id = fileledger.id
+                            except Exception as e:
+                                Logger.error('Failed to get metadata for file %s (%s)'%(node, str(e)))
+                                continue
+                            else:
+                                self.manager.close_session()
+                                self.pools.progress.worker_kwargs = dict(\
+                                    log_path=self.args.log_path,
+                                    pcount=remaining_count,
+                                    pdesc='%d. %s'%(nodeidx, path.basename(node)),
+                                    punit='records',
+                                    manager=self.manager\
+                                )
+                                self.pools.progress.refresh()
+                                self.pools.progress.start()
+                                for mft_record in mft_file.entries:
+                                    if remaining_count == 0:
+                                        break
+                                    self.pools.parser.add_task(mft_record, nodeidx, recordidx, metadata)
+                                    recordidx += 1
+                                    remaining_count -= 1
+                    finally:
+                        record_count += (recordidx + 1)
+                    self.pools.parser.join_tasks()
+                    self.pools.progress.join_tasks()
+                    self.pools.progress.add_poison_pills()
+                    self.pools.progress.join_workers()
+                    node_progress.update(1)
+                    if record_count >= self.args.count:
+                        break
+            self.pools.parser.add_poison_pills()
+            self.pools.parser.join_workers()
+        finally:
+            self.manager.close_session()
+    def _parse_postamble(self):
+        '''
+        @ParseDirectiveMixin._parse_postamble
+        '''
+        pass
     def run(self):
         '''
         Args:
@@ -555,106 +728,13 @@ class ParseDBDirective(BaseDirective, DBConnectionMixin):
                 2) args.db_conn_string is not None and is valid connection string 
                 3) args.db_user, args.db_passwd, args.db_host, and args.db_port are not None
         '''
-        conn_string = cls._prepare_conn_string(args)
-        manager = DBManager(conn_string=conn_string, metadata=db.BaseTable.metadata)
-        try:
-            manager.initialize(bootstrap=True)
-        except Exception as e:
-            Logger.error('Failed to initialize DBManager (%s)'%str(e))
-        else:
-            frontier = cls.get_frontier(args.sources)
-            frontier_count = len(frontier)
-            if frontier_count > 0:
-                tqdm.set_lock(parallel.RLock())
-                progress_pool = parallel.WorkerPool(\
-                    parallel.JoinableQueue(-1), 
-                    tasks.ParseDBTaskStage2,
-                    daemonize=False, 
-                    worker_class=parallel.DBProgressTrackerWorker,
-                    worker_count=1\
-                )
-                worker_pool = parallel.WorkerPool(\
-                    parallel.JoinableQueue(-1), 
-                    tasks.ParseDBTaskStage1, 
-                    daemonize=False, 
-                    worker_count=args.threads,
-                    worker_kwargs=dict(\
-                        result_queue=progress_pool.queue, 
-                        log_path=args.log_path\
-                    )
-                )
-                worker_pool.start()
-                record_count = 0
-                with tqdm(total=frontier_count, desc='Total', unit='files') as node_progress:
-                    for nodeidx, node in enumerate(frontier):
-                        Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
-                        mft_file = MFT(node)
-                        try:
-                            recordidx = 0
-                            remaining_count = cls._get_remaining_count(node, record_count, args.count)
-                            if remaining_count > 0:
-                                try:
-                                    if manager.session is None:
-                                        try:
-                                            manager.create_session()
-                                        except Exception as e:
-                                            Logger.critical('Failed to establish database session (%s)'%str(e))
-                                            break
-                                    metadata = mft_file.get_metadata()
-                                    fileledger = manager.query(db.FileLedger, sha2hash=metadata.sha2hash).first()
-                                    if fileledger is not None:
-                                        for field in metadata:
-                                            metadata[field] = getattr(fileledger, field)
-                                        metadata.id = fileledger.id
-                                    else:
-                                        fileledger = db.FileLedger().populate_fields(metadata)
-                                        try:
-                                            manager.add(fileledger, commit=True)
-                                        except Exception as e:
-                                            Logger.error('Failed to add metadata for %s to database (%s)'%(node, str(e)))
-                                            continue
-                                        else:
-                                            metadata.id = fileledger.id
-                                except Exception as e:
-                                    Logger.error('Failed to get metadata for file %s (%s)'%(node, str(e)))
-                                    continue
-                                else:
-                                    manager.close_session()
-                                    progress_pool.worker_kwargs = dict(\
-                                        log_path=args.log_path,
-                                        pcount=remaining_count,
-                                        pdesc='%d. %s'%(nodeidx, path.basename(node)),
-                                        punit='records',
-                                        manager=manager\
-                                    )
-                                    progress_pool.refresh()
-                                    progress_pool.start()
-                                    for mft_record in mft_file.entries:
-                                        if remaining_count == 0:
-                                            break
-                                        worker_pool.add_task(mft_record, nodeidx, recordidx, metadata)
-                                        recordidx += 1
-                                        remaining_count -= 1
-                        finally:
-                            record_count += (recordidx + 1)
-                        worker_pool.join_tasks()
-                        progress_pool.join_tasks()
-                        progress_pool.add_poison_pills()
-                        progress_pool.join_workers()
-                        node_progress.update(1)
-                        if record_count >= args.count:
-                            break
-                worker_pool.add_poison_pills()
-                worker_pool.join_workers()
-        finally:
-            manager.close_session()
+        super(ParseDBDirective, self).run()
 
 class DBQueryDirective(BaseDirective, DBConnectionMixin):
     '''
     Directive for querying a DB
     '''
-    @classmethod
-    def run(cls, args):
+    def run(self):
         '''
         Args:
             @BaseDirective.run_directive
@@ -671,48 +751,44 @@ class DBQueryDirective(BaseDirective, DBConnectionMixin):
             args.query is of type String
             args.title is of type String
         '''
-        assert isinstance(args.query, str), 'Query is not of type String'
-        if args.target is not None:
-            assert path.isdir(path.dirname(args.target)), 'Target does not point to existing directory'
-        conn_string = cls._prepare_conn_string(args)
+        assert isinstance(self.args.query, str), 'Query is not of type String'
+        if self.args.target is not None:
+            assert path.isdir(path.dirname(self.args.target)), 'Target does not point to existing directory'
+        conn_string = self._prepare_conn_string(self.args)
         manager = DBManager(conn_string=conn_string, metadata=db.BaseTable.metadata)
+        manager.initialize(create_session=True)
         try:
-            manager.initialize(create_session=True)
+            result_proxy = manager.session.execute(text(self.args.query))
         except Exception as e:
-            Logger.error('Failed to initialize DBManager (%s)'%str(e))
+            Logger.error('Failed to submit query to database (%s)'%(str(e)))
         else:
-            try:
-                result_proxy = manager.session.execute(text(args.query))
-            except Exception as e:
-                Logger.error('Failed to submit query to database (%s)'%(str(e)))
-            else:
-                headers = result_proxy.keys()
-                resultset = result_proxy.fetchall()
-                if len(resultset) > 0:
-                    if args.target is not None:
-                        args.target = path.abspath(args.target)
-                        try:
-                            with open(args.target, 'a') as target:
-                                target.write(args.sep.join(headers))
-                                for result in resultset:
-                                    try:
-                                        target.write(args.sep.join([str(item) for item in result]))
-                                    except Exception as e:
-                                        Logger.error('Failed to write result to output file %s (%s)'%(args.target, str(e)))
-                        except Exception as e:
-                            Logger.error('Failed to write results to output file %s (%s)'%(args.target, str(e)))
-                    else:
-                        if sys.stdout.isatty():
-                            table_data = [headers]
+            headers = result_proxy.keys()
+            resultset = result_proxy.fetchall()
+            if len(resultset) > 0:
+                if self.args.target is not None:
+                    self.args.target = path.abspath(self.args.target)
+                    try:
+                        with open(self.args.target, 'a') as target:
+                            target.write(self.args.sep.join(headers) + '\n')
                             for result in resultset:
-                                table_data.append([str(item) for item in result])
-                            table = AsciiTable(table_data)
-                            if args.title:
-                                table.title = args.title
-                            print(table.table)
-                        else:
-                            print(args.sep.join(headers))
-                            for result in resultset:
-                                print(args.sep.join([str(item) for item in result]))
+                                try:
+                                    target.write(self.args.sep.join([str(item) for item in result]) + '\n')
+                                except Exception as e:
+                                    Logger.error('Failed to write result to output file %s (%s)'%(args.target, str(e)))
+                    except Exception as e:
+                        Logger.error('Failed to write results to output file %s (%s)'%(args.target, str(e)))
                 else:
-                    Logger.info('No results found for query %s'%args.query)
+                    if sys.stdout.isatty():
+                        table_data = [headers]
+                        for result in resultset:
+                            table_data.append([str(item) for item in result])
+                        table = AsciiTable(table_data)
+                        if self.args.title:
+                            table.title = args.title
+                        print(table.table)
+                    else:
+                        print(args.sep.join(headers))
+                        for result in resultset:
+                            print(args.sep.join([str(item) for item in result]))
+            else:
+                Logger.info('No results found for query %s'%args.query)
