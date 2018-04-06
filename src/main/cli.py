@@ -58,7 +58,7 @@ def FileFormatList(arg):
     '''
     try:
         file_formats = set(['csv', 'body', 'json'])
-        return [item for item in args.strip().split(',') if item in file_formats] 
+        return [item for item in arg.strip().split(',') if item in file_formats] 
     except Exception as e:
         raise ArgumentTypeError(str(e))
 
@@ -136,8 +136,8 @@ def initialize_parser():
     file_parse_directive = parse_subdirectives.add_parser('file', parents=[base_parent, base_parse_parent, csv_output_parent], help='Parse $MFT file to multiple output formats')
     file_parse_directive.add_argument('-f', '--format', type=FileFormatList, required=True, help='Comma-separated list of output formats (choices: csv, body, and json)', dest='formats')
     file_parse_directive.add_argument('-p', '--pretty', action='store_true', help='Whether to pretty-print the JSON output', dest='pretty')
-    file_parse_directive.set_defaults(func=lambda args: print('"parse file" directive not implemented'))
-    #file_parse_directive.set_defaults(func=DirectiveRegistry.retrieve('ParseFILEDirective'))
+    file_parse_directive.add_argument('-i', '--info-type', type=str, help='Information type for CSV output', dest='info_type')
+    file_parse_directive.set_defaults(func=DirectiveRegistry.retrieve('ParseFILEDirective'))
 
     # Database parse directive
     db_parse_directive = parse_subdirectives.add_parser('db', parents=[base_parent, base_parse_parent, db_connect_parent], help='Parse $MFT file to database')

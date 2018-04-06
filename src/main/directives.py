@@ -24,7 +24,8 @@
 import logging
 Logger = logging.getLogger(__name__)
 import sys
-from os import path, stat
+from os import path, stat, mkdir, rmdir
+from time import sleep
 from glob import glob
 from argparse import Namespace
 from construct.lib import Container
@@ -120,6 +121,7 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
         initialize_logger(self.args.log_path)
         Logger.info('BEGIN: %s'%type(self).__name__)
         self.run()
+        sleep(0.5)
         Logger.info('END: %s'%type(self).__name__)
         logging.shutdown()
         log_path = synthesize_log_path(self.args.log_path, self.args.log_prefix)
@@ -327,7 +329,7 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
         '''
         @ParseDirectiveMixin._should_parse
         '''
-        return len(self.frontier) > 0 and self.args.count > 0 and self._TASK_CLASS is not None
+        return len(self.frontier) > 0 and self.args.count > 0
     def _parse_preamble(self):
         '''
         @ParseDirectiveMixin._parse_preamble
@@ -376,7 +378,7 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
             worker_kwargs=self._get_worker_kwargs(),
             task_kwargs=self._get_task_kwargs()\
         )
-    def _add_task(self, mft_record, nodeidx, recordidx):
+    def _add_tasks(self, mft_record, nodeidx, recordidx):
         '''
         Args:
             mft_record: ByteString  => MFT record to add to task
@@ -414,7 +416,7 @@ class BaseParseFileOutputDirective(ParseDirectiveMixin, BaseDirective):
                         for mft_record in mft_file.entries:
                             if remaining_count == 0:
                                 break
-                            self._add_task(mft_record, nodeidx, recordidx)
+                            self._add_tasks(mft_record, nodeidx, recordidx)
                             recordidx += 1
                             remaining_count -= 1
                 finally:
@@ -541,6 +543,92 @@ class ParseFILEDirective(BaseParseFileOutputDirective):
         assert len(self.args.target_name) > 0, 'Could not extract target filename from %s'%args.target
         self.args.target_parent = path.abspath(path.dirname(self.args.target))
         self.args.target = path.join(self.args.target_parent, self.args.target_name)
+    def _parse_preamble(self):
+        '''
+        @ParseDirectiveMixin._parse_preamble
+        '''
+        tqdm.set_lock(parallel.RLock())
+        for fmt in self.args.formats:
+            mkdir(path.join(self.args.target_parent, fmt))
+    def _get_task_kwargs(self):
+        '''
+        @BaseParseFileOutputDirective._get_task_kwargs
+        '''
+        return None
+    def _get_worker_kwargs(self):
+        '''
+        @BaseParseFileOutputDirective._get_worker_kwargs
+        '''
+        return dict(result_queue=self.pools.progress.queue, log_path=self.args.log_path)
+    def _add_tasks(self, mft_record, nodeidx, recordidx):
+        '''
+        @BaseParseFileOutputDirective._add_tasks
+        '''
+        for fmt in self.args.formats:
+            kwargs = dict(target=path.join(self.args.target_parent, fmt))
+            if fmt != 'json':
+                kwargs['sep'] = self.args.sep
+                if fmt == 'csv':
+                    kwargs['info_type'] = self.args.info_type
+            else:
+                kwargs['pretty'] = self.args.pretty
+            self.pools.parser.add_task(\
+                getattr(tasks, 'Parse' + fmt.upper() + 'Task')(\
+                    mft_record,
+                    nodeidx,
+                    recordidx,
+                    **kwargs\
+                ),
+                included=True\
+            )
+    def _parse_loop(self):
+        '''
+        @ParseDirectiveMixin._parse_loop
+        '''
+        self.pools.parser.start()
+        record_count = 0
+        with tqdm(total=len(self.frontier), desc='Total', unit='files') as node_progress:
+            for nodeidx, node in enumerate(self.frontier):
+                Logger.info('Parsing $MFT file %s (node %d)'%(node, nodeidx))
+                mft_file = MFT(node)
+                try:
+                    recordidx = 0
+                    remaining_count = self._get_remaining_count(node, record_count, self.args.count)
+                    if remaining_count > 0:
+                        self.pools.progress.worker_kwargs = dict(\
+                            pcount=remaining_count * len(self.args.formats),
+                            pdesc='%d. %s'%(nodeidx, path.basename(node)),
+                            punit='records'\
+                        )
+                        self.pools.progress.refresh()
+                        self.pools.progress.start()
+                        for mft_record in mft_file.entries:
+                            if remaining_count == 0:
+                                break
+                            self._add_tasks(mft_record, nodeidx, recordidx)
+                            recordidx += 1
+                            remaining_count -= 1
+                finally:
+                    record_count += (recordidx + 1)
+                self.pools.parser.join_tasks()
+                self.pools.progress.join_tasks()
+                self.pools.progress.add_poison_pills()
+                self.pools.progress.join_workers()
+                node_progress.update(1)
+                if record_count >= self.args.count:
+                    break
+        self.pools.parser.add_poison_pills()
+        self.pools.parser.join_workers()
+    def _parse_postamble(self):
+        '''
+        @ParseDirectiveMixin._parse_postamble
+        '''
+        for fmt in self.args.formats:
+            parallel.coalesce_files(\
+                path.join(self.args.target_parent, fmt, '*_tmp_amft.out'),
+                self.args.target + '.' + fmt\
+            )
+            rmdir(path.join(self.args.target_parent, fmt))
 
 class ParseDBDirective(ParseDirectiveMixin, BaseDirective, DBConnectionMixin):
     '''
