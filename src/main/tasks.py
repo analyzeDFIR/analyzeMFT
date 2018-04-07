@@ -230,8 +230,8 @@ class ParseCSVTask(BaseParseFileOutputTask, FileNameResolutionMixin):
         self.result_set = list()
         # FIELDS: RecordNumber, Signature, SequenceNumber, LogFileSequenceNumber, BaseFileRecordSegmentNumber, BaseFileRecordSequenceNumber, 
         #         Active, HasIndex, UsedSize, TotalSize, ReferenceCount, FirstAttributeId, FileName,
-        #         StandardInformationModifyDate, StandardInformationAccessDate, StandardInformationCreateDate, StandardInformationEntryDate,
-        #         FileNameModifyDate, FileNameAccessDate, FileNameCreateDate, FileNameEntryDate,
+        #         StandardInformationModifyDate, StandardInformationAccessDate, StandardInformationEntryDate, StandardInformationCreateDate,
+        #         FileNameModifyDate, FileNameAccessDate, FileNameEntryDate, FileNameCreateDate,
         #         StandardInformationCount, AttributeListCount, FileNameCount, ObjectIDCount, SecurityDescriptorCount, VolumeNameCount,
         #         VolumeInformationCount, DataCount, IndexRootCount, IndexAllocationCount
         if self.context.info_type == 'summary':
@@ -262,8 +262,8 @@ class ParseCSVTask(BaseParseFileOutputTask, FileNameResolutionMixin):
                     if len(mft_entry.standard_information) > 0:
                         result.append(mft_entry.standard_information[0].body.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                         result.append(mft_entry.standard_information[0].body.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                        result.append(mft_entry.standard_information[0].body.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                         result.append(mft_entry.standard_information[0].body.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.standard_information[0].body.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                     else:
                         result.append(self.NULL)
                         result.append(self.NULL)
@@ -272,8 +272,8 @@ class ParseCSVTask(BaseParseFileOutputTask, FileNameResolutionMixin):
                     if len(mft_entry.file_name) > 0:
                         result.append(mft_entry.file_name[0].body.LastModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                         result.append(mft_entry.file_name[0].body.LastAccessTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
-                        result.append(mft_entry.file_name[0].body.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                         result.append(mft_entry.file_name[0].body.EntryModifiedTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
+                        result.append(mft_entry.file_name[0].body.CreateTime.strftime('%Y-%m-%d %H:%M:%S.%f%z'))
                     else:
                         result.append(self.NULL)
                         result.append(self.NULL)
