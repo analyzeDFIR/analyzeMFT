@@ -567,7 +567,7 @@ class ParseFILEDirective(BaseParseFileOutputDirective):
         for fmt in self.args.formats:
             kwargs = dict(target=path.join(self.args.target_parent, fmt))
             if fmt != 'json':
-                kwargs['sep'] = self.args.sep
+                kwargs['sep'] = self.args.sep if fmt != 'body' else '|'
                 if fmt == 'csv':
                     kwargs['info_type'] = self.args.info_type
             else:
