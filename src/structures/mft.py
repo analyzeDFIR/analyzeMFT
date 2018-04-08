@@ -28,15 +28,5 @@ from .attribute_list import *
 from .file_name import *
 from .object_id import *
 from .security_descriptor import *
-from .volume_name import *
 from .volume_information import *
 from .index import *
-
-'''
-MFTDataRunEntry
-TODO: Incomplete
-'''
-MFTDataRunEntry = Struct(
-    'DataRunSize'           / Bitwise(BitsInteger(4, signed=True, swapped=True)),
-    'DataRunOffset'         / Bitwise(BitsInteger(4, swapped=True))
-)
