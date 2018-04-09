@@ -224,6 +224,11 @@ class DBProgressTrackerWorker(ProgressTrackerWorker):
     def __init__(self, *args, manager=None, **kwargs):
         super(DBProgressTrackerWorker, self).__init__(*args, **kwargs)
         self.manager = manager
+    def _preamble(self):
+        '''
+        @BaseQueueWorker._preamble
+        '''
+        super(DBProgressTrackerWorker, self)._preamble()
         self.manager.initialize(metadata=BaseTable.metadata)
     def _postamble(self):
         '''
