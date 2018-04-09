@@ -16,6 +16,7 @@ This version of analyzeMFT is not yet available on PyPi, so it can be cloned via
 ```bash
 $ git clone git@github.com:noahrubin/analyzeMFT.git # (or https://github.com/noahrubin/analyzeMFT.git)
 $ cd analyzeMFT
+$ git checkout rewrite2018
 $ ./amft.py -h # show CLI usage
 ```
 
@@ -299,7 +300,7 @@ The JSON format is an unordered collection of data parsed from each $MFT entry, 
 | bitmap | Only contains attribute header information (see <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
 | logged_utility_stream | Only contains attribute header information (see <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
 
-## JSON Format
+## DB Format
 
 See [src/database/models.py](https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/database/models.py).
 
