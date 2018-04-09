@@ -35,6 +35,7 @@ from terminaltables import AsciiTable
 
 from src.utils.config import initialize_logger, synthesize_log_path
 from src.utils.registry import RegistryMetaclassMixin 
+from src.utils.logging import closeFileHandlers
 from src.parsers.mft import MFT
 import src.utils.parallel as parallel
 import src.main.tasks as tasks
@@ -124,6 +125,7 @@ class BaseDirective(object, metaclass=DirectiveRegistry):
         sleep(0.5)
         Logger.info('END: %s'%type(self).__name__)
         logging.shutdown()
+        closeFileHandlers()
         log_path = synthesize_log_path(self.args.log_path, self.args.log_prefix)
         parallel.coalesce_files(path.join(self.args.log_path, '*_tmp_amft.log'), log_path)
 
