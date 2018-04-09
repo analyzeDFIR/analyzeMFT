@@ -31,6 +31,7 @@ from heapq import merge as heapq_merge
 from tqdm import tqdm
 
 from src.utils.config import initialize_logger
+from src.database.models import BaseTable
 
 CPU_COUNT = cpu_count()
 
@@ -223,7 +224,7 @@ class DBProgressTrackerWorker(ProgressTrackerWorker):
     def __init__(self, *args, manager=None, **kwargs):
         super(DBProgressTrackerWorker, self).__init__(*args, **kwargs)
         self.manager = manager
-        self.manager.initialize()
+        self.manager.initialize(metadata=BaseTable.metadata)
     def _postamble(self):
         '''
         @BaseQueueWorker._postamble

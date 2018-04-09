@@ -764,7 +764,7 @@ class ParseDBDirective(ParseDirectiveMixin, BaseDirective, DBConnectionMixin):
                                     pcount=remaining_count,
                                     pdesc='%d. %s'%(nodeidx, path.basename(node)),
                                     punit='records',
-                                    manager=DBManager(conn_string=self.conn_string, metadata=db.BaseTable.metadata)\
+                                    manager=DBManager(conn_string=self.conn_string)\
                                 )
                                 self.pools.progress.refresh()
                                 self.pools.progress.start()
