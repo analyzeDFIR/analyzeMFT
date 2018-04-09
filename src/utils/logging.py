@@ -36,10 +36,9 @@ def closeFileHandlers(logger=logging.root):
     '''
     for handler in logger.handlers:
         if issubclass(type(handler), logging.FileHandler):
-            try:
+            if hasattr(handler, 'close') and callable(handler.close):
                 handler.close()
-            except:
-                pass
+                logger.removeHandler(handler)
 def addProcessScopedHandler(filename, logger=logging.root, mode='a', encoding='UTF-8'):
     '''
     Args:
