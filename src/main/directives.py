@@ -758,12 +758,13 @@ class ParseDBDirective(ParseDirectiveMixin, BaseDirective, DBConnectionMixin):
                                 continue
                             else:
                                 self.manager.close_session()
+                                self.manager.engine.dispose()
                                 self.pools.progress.worker_kwargs = dict(\
                                     log_path=self.args.log_path,
                                     pcount=remaining_count,
                                     pdesc='%d. %s'%(nodeidx, path.basename(node)),
                                     punit='records',
-                                    manager=self.manager\
+                                    manager=DBManager(conn_string=self.conn_string, metadata=db.BaseTable.metadata)\
                                 )
                                 self.pools.progress.refresh()
                                 self.pools.progress.start()

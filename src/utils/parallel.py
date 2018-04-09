@@ -223,12 +223,14 @@ class DBProgressTrackerWorker(ProgressTrackerWorker):
     def __init__(self, *args, manager=None, **kwargs):
         super(DBProgressTrackerWorker, self).__init__(*args, **kwargs)
         self.manager = manager
+        self.manager.initialize()
     def _postamble(self):
         '''
         @BaseQueueWorker._postamble
         '''
         super(DBProgressTrackerWorker, self)._postamble()
         self.manager.close_session()
+        self.manager.engine.dispose()
 
 class WorkerPool(object):
     '''
