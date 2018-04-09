@@ -21,7 +21,7 @@ $ ./amft.py -h # show CLI usage
 
 ## Dependencies
 
-All of the core dependencies come shipped with analyzeMFT in the [lib/](https://github.com/noahrubin/analyzeMFT/tree/rewrite2018/lib) directory, and the application uses those by default.  If there is a consensus that users want the ability to use already-installed versions of those packages (i.e. in a virtualenv), that change can be made easily.  Thus, the only potential dependencies are database drivers for SQLAlchemy to use.  See below:
+All of the core dependencies beside [six](https://pypi.python.org/pypi/six) come shipped with analyzeMFT in the [lib/](https://github.com/noahrubin/analyzeMFT/tree/rewrite2018/lib) directory, and the application uses those by default.  If there is a consensus that users want the ability to use already-installed versions of those packages (i.e. in a virtualenv), that change can be made easily.  Thus, the only potential dependencies are database drivers for SQLAlchemy to use.  See below:
 
 | RDBMS Name | SQLAlchemy Link |
 |------------|-----------------|
