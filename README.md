@@ -2,7 +2,7 @@
 
 ## What is analyzeMFT?
 
-[analyzeMFT](https://github.com/noahrubin/analyzeMFT) is a command line tool for parsing information from $MFT files extracted from drives using the NTFS filesystem.  The tool was originally written by [David Kovar](https://github.com/dkovar), and is intended to parse as much information from an $MFT file as possible in the most accurate way possible.  I chose to re-write the tool with the following goals/enhancements in mind:
+[analyzeMFT](https://github.com/analyzeDFIR/analyzeMFT) is a command line tool for parsing information from $MFT files extracted from drives using the NTFS filesystem.  The tool was originally written by [David Kovar](https://github.com/dkovar), and is intended to parse as much information from an $MFT file as possible in the most accurate way possible.  I chose to re-write the tool with the following goals/enhancements in mind:
 
 1) Construct a framework for parallel processing to reduce parsing time.
 2) Extract as much information from the $MFT as possible without taking an opinion on how analysts should use that information.
@@ -14,7 +14,7 @@
 This version of analyzeMFT is not yet available on PyPi, so it can be cloned via the following:
 
 ```bash
-$ git clone git@github.com:noahrubin/analyzeMFT.git # (or https://github.com/noahrubin/analyzeMFT.git)
+$ git clone git@github.com:analyzeDFIR/analyzeMFT.git # (or https://github.com/analyzeDFIR/analyzeMFT.git)
 $ cd analyzeMFT
 $ git checkout rewrite2018
 $ ./amft.py -h # show CLI usage
@@ -22,7 +22,7 @@ $ ./amft.py -h # show CLI usage
 
 ## Dependencies
 
-All of the core dependencies beside [six](https://pypi.python.org/pypi/six) come shipped with analyzeMFT in the [lib/](https://github.com/noahrubin/analyzeMFT/tree/rewrite2018/lib) directory, and the application uses those by default.  If there is a consensus that users want the ability to use already-installed versions of those packages (i.e. in a virtualenv), that change can be made easily.  Thus, the only potential dependencies are database drivers for SQLAlchemy to use.  See below:
+All of the core dependencies beside [six](https://pypi.python.org/pypi/six) come shipped with analyzeMFT in the [lib/](https://github.com/analyzeDFIR/analyzeMFT/tree/rewrite2018/lib) directory, and the application uses those by default.  If there is a consensus that users want the ability to use already-installed versions of those packages (i.e. in a virtualenv), that change can be made easily.  Thus, the only potential dependencies are database drivers for SQLAlchemy to use.  See below:
 
 | RDBMS Name | SQLAlchemy Link |
 |------------|-----------------|
@@ -226,18 +226,18 @@ Due to the relational nature of the $MFT, the various file formats output differ
 
 | Field | Description |
 |-------|-------------|
-| RecordNumber | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| Signature | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| SequenceNumber | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| LogFileSequenceNumber | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| BaseFileRecordSegmentNumber | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| BaseFileRecordSequenceNumber | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| Active | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| HasIndex | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| UsedSize | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| TotalSize | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| ReferenceCount | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| FirstAttributeId | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| RecordNumber | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| Signature | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| SequenceNumber | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| LogFileSequenceNumber | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| BaseFileRecordSegmentNumber | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| BaseFileRecordSequenceNumber | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| Active | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| HasIndex | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| UsedSize | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| TotalSize | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| ReferenceCount | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| FirstAttributeId | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
 | FileName | Longest file name found in $FILE_NAME attributes |
 | StandardInformationModifyDate | M time from first $STANDARD_INFORMATION attribute |
 | StandardInformationAccessDate | A time from first $STANDARD_INFORMATION attribute |
@@ -286,23 +286,23 @@ The JSON format is an unordered collection of data parsed from each $MFT entry, 
 
 | Key Name | Description |
 |----------|-------------|
-| header | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
-| standard_information | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/standard_information.py" target="_blank">src/structures/standard_information.py</a> |
-| attribute_list | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/attribute_list.py" target="_blank">src/structures/attribute_list.py</a> |
-| file_name | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/file_name.py" target="_blank">src/structures/file_name.py</a> |
-| object_id | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/object_id.py" target="_blank">src/structures/object_id.py</a> |
-| security_descriptor | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/security_descriptor.py" target="_blank">src/structures/security_descriptor.py</a> |
+| header | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a> (MFTEntryHeader) |
+| standard_information | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/standard_information.py" target="_blank">src/structures/standard_information.py</a> |
+| attribute_list | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/attribute_list.py" target="_blank">src/structures/attribute_list.py</a> |
+| file_name | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/file_name.py" target="_blank">src/structures/file_name.py</a> |
+| object_id | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/object_id.py" target="_blank">src/structures/object_id.py</a> |
+| security_descriptor | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/security_descriptor.py" target="_blank">src/structures/security_descriptor.py</a> |
 | volume_name | NTFS volume name |
-| volume_information | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/volume_information.py" target="_blank">src/structures/volume_information.py</a> |
+| volume_information | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/volume_information.py" target="_blank">src/structures/volume_information.py</a> |
 | data | If data is resident in $MFT, will contain UTF-8 encoded version of binary data, as well as hash of original binary data |
-| index_root | See <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/index.py" target="_blank">src/structures/index.py</a> |
-| index_allocation | Only contains attribute header information (see <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
-| bitmap | Only contains attribute header information (see <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
-| logged_utility_stream | Only contains attribute header information (see <a href="https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
+| index_root | See <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/index.py" target="_blank">src/structures/index.py</a> |
+| index_allocation | Only contains attribute header information (see <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
+| bitmap | Only contains attribute header information (see <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
+| logged_utility_stream | Only contains attribute header information (see <a href="https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/structures/headers.py" target="_blank">src/structures/headers.py</a>) |
 
 ## DB Format
 
-See [src/database/models.py](https://github.com/noahrubin/analyzeMFT/blob/rewrite2018/src/database/models.py).
+See [src/database/models.py](https://github.com/analyzeDFIR/analyzeMFT/blob/rewrite2018/src/database/models.py).
 
 ## Contributing/Suggestions
 

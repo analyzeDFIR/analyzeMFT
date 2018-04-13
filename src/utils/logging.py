@@ -39,6 +39,7 @@ def closeFileHandlers(logger=logging.root):
             if hasattr(handler, 'close') and callable(handler.close):
                 handler.close()
                 logger.removeHandler(handler)
+
 def addProcessScopedHandler(filename, logger=logging.root, mode='a', encoding='UTF-8'):
     '''
     Args:
